@@ -208,126 +208,138 @@ export const ProductCard: React.FC<Props> = ({
         ) : null}
       </View>
 
-      {/* Body */}
+      {/* Body — flex 1 with space-between so Add button always sits at bottom */}
       <View style={styles.body}>
-        <Text
-          variant="bodyBold"
-          color={colors.textPrimary}
-          numberOfLines={2}
-          weight="800"
-          style={styles.name}
-        >
-          {product.name}
-        </Text>
-
-        {rating > 0 && !compact ? (
-          <View style={styles.ratingRow}>
-            <StarRating rating={rating} size={12} />
-            {product.totalReviews ? (
-              <Text variant="caption" color={colors.textTertiary} style={{ marginLeft: 4 }}>
-                ({product.totalReviews})
-              </Text>
-            ) : null}
-          </View>
-        ) : null}
-
-        {/* Variant dropdown (only if there are 2+ options and not compact) */}
-        {!compact && options.length > 1 ? (
-          <Pressable
-            onPress={e => {
-              e.stopPropagation?.();
-              setPickerOpen(true);
-            }}
-            style={styles.variantRow}
-            android_ripple={{ color: colors.pressed }}
+        <View style={styles.topBlock}>
+          <Text
+            variant="bodyBold"
+            color={colors.textPrimary}
+            numberOfLines={2}
+            ellipsizeMode="tail"
+            weight="700"
+            style={styles.name}
           >
-            <Text
-              variant="bodySmall"
-              color={colors.textPrimary}
-              numberOfLines={1}
-              style={{ flex: 1 }}
-            >
-              {(selectedOpt?.name || selectedOpt?.label) ?? ''}
-              {displayPrice ? ` — ${formatINR(displayPrice)}` : ''}
-              {hasDiscount ? ` (was ${formatINR(displayMrp!)})` : ''}
-            </Text>
-            <Icon name="chevron-down" size={14} color={colors.textSecondary} />
-          </Pressable>
-        ) : null}
-
-        {/* Price row */}
-        <View style={styles.priceRow}>
-          <Text variant="h5" color={colors.textPrimary} weight="800">
-            {formatINR(displayPrice)}
+            {product.name}
           </Text>
-          {hasDiscount ? (
-            <Text
-              variant="bodySmall"
-              color={colors.textMuted}
-              weight="600"
-              style={styles.mrp}
-            >
-              {formatINR(displayMrp!)}
-            </Text>
+
+          {rating > 0 && !compact ? (
+            <View style={styles.ratingRow}>
+              <StarRating rating={rating} size={12} />
+              {product.totalReviews ? (
+                <Text
+                  variant="caption"
+                  color={colors.textSecondary}
+                  weight="600"
+                  style={{ marginLeft: 4 }}
+                >
+                  ({product.totalReviews})
+                </Text>
+              ) : null}
+            </View>
           ) : null}
-          {unit ? (
-            <Text
-              variant="caption"
-              color={colors.textSecondary}
-              weight="600"
-              style={{ marginLeft: 6 }}
+
+          {/* Variant dropdown — sits immediately under the name with a tight gap */}
+          {!compact && options.length > 1 ? (
+            <Pressable
+              onPress={e => {
+                e.stopPropagation?.();
+                setPickerOpen(true);
+              }}
+              style={styles.variantRow}
+              android_ripple={{ color: colors.pressed }}
             >
-              {unit}
-            </Text>
+              <Text
+                variant="bodySmall"
+                color={colors.textPrimary}
+                weight="600"
+                numberOfLines={1}
+                style={{ flex: 1 }}
+              >
+                {(selectedOpt?.name || selectedOpt?.label) ?? ''}
+                {displayPrice ? ` — ${formatINR(displayPrice)}` : ''}
+                {hasDiscount ? ` (was ${formatINR(displayMrp!)})` : ''}
+              </Text>
+              <Icon name="chevron-down" size={14} color={colors.primary} />
+            </Pressable>
           ) : null}
         </View>
 
-        {/* Add button ↔ Quantity stepper */}
-        {showAddToCart ? (
-          cartQty > 0 ? (
-            <Animated.View
-              entering={FadeIn.duration(180)}
-              exiting={FadeOut.duration(120)}
-              style={{ marginTop: spacing.sm }}
-            >
-              <QuantityStepper
-                qty={cartQty}
-                onIncrement={handleIncrement}
-                onDecrement={handleDecrement}
-                loading={busy}
-                min={0}
-                max={APP_CONFIG.MAX_CART_ITEM_QTY}
-                size="md"
-                tone="primary"
-              />
-            </Animated.View>
-          ) : (
-            <Animated.View
-              entering={FadeIn.duration(180)}
-              exiting={FadeOut.duration(120)}
-            >
-              <Pressable
-                onPress={handleAdd}
-                disabled={busy || outOfStock}
-                android_ripple={{ color: 'rgba(255,255,255,0.18)' }}
-                style={({ pressed }) => [
-                  styles.addBtn,
-                  outOfStock && styles.addBtnDisabled,
-                  pressed && !outOfStock && { transform: [{ scale: 0.98 }] },
-                ]}
+        <View style={styles.bottomBlock}>
+          {/* Price row */}
+          <View style={styles.priceRow}>
+            <Text variant="h5" color={colors.textPrimary} weight="800">
+              {formatINR(displayPrice)}
+            </Text>
+            {hasDiscount ? (
+              <Text
+                variant="bodySmall"
+                color={colors.textTertiary}
+                weight="600"
+                style={styles.mrp}
               >
-                <Icon name="shopping-cart" size={14} color={colors.white} />
-                <Text
-                  variant="button"
-                  color={colors.white}
-                  style={{ marginLeft: 6 }}
+                {formatINR(displayMrp!)}
+              </Text>
+            ) : null}
+            {unit ? (
+              <Text
+                variant="caption"
+                color={colors.textSecondary}
+                weight="700"
+                style={{ marginLeft: 6 }}
+              >
+                {unit}
+              </Text>
+            ) : null}
+          </View>
+
+          {/* Add button ↔ Quantity stepper */}
+          {showAddToCart ? (
+            cartQty > 0 ? (
+              <Animated.View
+                entering={FadeIn.duration(180)}
+                exiting={FadeOut.duration(120)}
+                style={{ marginTop: spacing.sm }}
+              >
+                <QuantityStepper
+                  qty={cartQty}
+                  onIncrement={handleIncrement}
+                  onDecrement={handleDecrement}
+                  loading={busy}
+                  min={0}
+                  max={APP_CONFIG.MAX_CART_ITEM_QTY}
+                  size="md"
+                  tone="primary"
+                />
+              </Animated.View>
+            ) : (
+              <Animated.View
+                entering={FadeIn.duration(180)}
+                exiting={FadeOut.duration(120)}
+              >
+                <Pressable
+                  onPress={handleAdd}
+                  disabled={busy || outOfStock}
+                  android_ripple={{ color: 'rgba(255,255,255,0.2)' }}
+                  style={({ pressed }) => [
+                    styles.addBtn,
+                    outOfStock && styles.addBtnDisabled,
+                    pressed && !outOfStock && { transform: [{ scale: 0.98 }] },
+                  ]}
                 >
-                  Add
-                </Text>
-              </Pressable>
-            </Animated.View>
-          )
-        ) : null}
+                  <Icon name="shopping-cart" size={14} color={colors.white} />
+                  <Text
+                    variant="button"
+                    color={colors.white}
+                    weight="700"
+                    style={{ marginLeft: 6, letterSpacing: 0.3 }}
+                  >
+                    Add
+                  </Text>
+                </Pressable>
+              </Animated.View>
+            )
+          ) : null}
+        </View>
       </View>
 
       {/* Variant picker bottom-sheet */}
@@ -353,12 +365,15 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderRadius: radius.xl,
     overflow: 'hidden',
+    // Fixed min-height keeps every card in a grid aligned regardless
+    // of name length / number of variant rows.
+    minHeight: 340,
     ...shadows.md,
   },
   imageWrap: {
     width: '100%',
     aspectRatio: 1,
-    backgroundColor: colors.palette.neutral[100],
+    backgroundColor: colors.tintSoft,
     position: 'relative',
   },
   image: { width: '100%', height: '100%' },
@@ -376,7 +391,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: spacing.sm,
     right: spacing.sm,
-    backgroundColor: colors.error,
+    backgroundColor: colors.badgeDiscount,
     paddingHorizontal: spacing.sm,
     paddingVertical: 3,
     borderRadius: radius.full,
@@ -392,9 +407,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  body: { padding: spacing.md, gap: 4 },
-  name: { minHeight: 36 },
-  ratingRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
+  // Body fills remaining space so bottomBlock always pins to the bottom.
+  body: {
+    flex: 1,
+    padding: spacing.md,
+    justifyContent: 'space-between',
+  },
+  topBlock: {},
+  bottomBlock: {},
+  // Reserve 2 lines of vertical space whether the name is short or long.
+  // This is what keeps the price row + Add button aligned across cards.
+  name: {
+    minHeight: 40,
+    marginBottom: 4,
+  },
+  ratingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
   variantRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -403,15 +434,12 @@ const styles = StyleSheet.create({
     borderRadius: radius.base,
     paddingHorizontal: spacing.sm,
     paddingVertical: 7,
-    marginTop: 6,
-    marginBottom: 4,
     backgroundColor: colors.surface,
   },
   priceRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
     flexWrap: 'wrap',
-    marginTop: 4,
   },
   mrp: {
     marginLeft: spacing.sm,
@@ -421,8 +449,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.cta,
-    paddingVertical: spacing.sm,
+    backgroundColor: colors.primary,
+    paddingVertical: spacing.sm + 2,
     borderRadius: radius.lg,
     marginTop: spacing.sm,
     ...shadows.sm,

@@ -57,7 +57,7 @@ export const QuantityStepper: React.FC<Props> = ({
         {
           height: sizing.height,
           paddingHorizontal: sizing.pad,
-          backgroundColor: isPrimary ? colors.cta : colors.surface,
+          backgroundColor: isPrimary ? colors.primary : colors.surface,
           borderWidth: isPrimary ? 0 : 1.5,
           borderColor: colors.border,
         },
@@ -68,9 +68,13 @@ export const QuantityStepper: React.FC<Props> = ({
       <Pressable
         onPress={decrement}
         disabled={qty <= min || !!loading}
-        hitSlop={6}
-        style={styles.btn}
-        android_ripple={{ color: colors.pressed, borderless: true, radius: 18 }}
+        hitSlop={8}
+        style={[styles.btn, { width: sizing.btn, height: sizing.btn }]}
+        android_ripple={{
+          color: isPrimary ? 'rgba(255,255,255,0.2)' : colors.pressed,
+          borderless: true,
+          radius: sizing.btn / 2,
+        }}
       >
         <Icon
           name="minus"
@@ -82,7 +86,7 @@ export const QuantityStepper: React.FC<Props> = ({
                 : colors.textMuted
               : isPrimary
               ? colors.white
-              : colors.ctaDark
+              : colors.primary
           }
         />
       </Pressable>
@@ -96,6 +100,7 @@ export const QuantityStepper: React.FC<Props> = ({
       ) : (
         <Text
           variant="bodyBold"
+          weight="800"
           color={isPrimary ? colors.white : colors.textPrimary}
           style={[styles.value, { fontSize: sizing.font }]}
         >
@@ -106,9 +111,13 @@ export const QuantityStepper: React.FC<Props> = ({
       <Pressable
         onPress={increment}
         disabled={qty >= max || !!loading}
-        hitSlop={6}
-        style={styles.btn}
-        android_ripple={{ color: colors.pressed, borderless: true, radius: 18 }}
+        hitSlop={8}
+        style={[styles.btn, { width: sizing.btn, height: sizing.btn }]}
+        android_ripple={{
+          color: isPrimary ? 'rgba(255,255,255,0.2)' : colors.pressed,
+          borderless: true,
+          radius: sizing.btn / 2,
+        }}
       >
         <Icon
           name="plus"
@@ -120,7 +129,7 @@ export const QuantityStepper: React.FC<Props> = ({
                 : colors.textMuted
               : isPrimary
               ? colors.white
-              : colors.ctaDark
+              : colors.primary
           }
         />
       </Pressable>
@@ -128,10 +137,12 @@ export const QuantityStepper: React.FC<Props> = ({
   );
 };
 
+// Touch targets meet the 36×36 spec (md = 40, lg = 44). Font is larger
+// so the quantity reads unambiguously against the brand background.
 const SIZES = {
-  sm: { height: 32, pad: 6, icon: 14, font: 13 },
-  md: { height: 40, pad: 8, icon: 16, font: 15 },
-  lg: { height: 48, pad: 10, icon: 18, font: 17 },
+  sm: { height: 36, pad: 6, icon: 16, font: 15, btn: 36 },
+  md: { height: 44, pad: 8, icon: 18, font: 17, btn: 40 },
+  lg: { height: 52, pad: 10, icon: 20, font: 19, btn: 44 },
 };
 
 const styles = StyleSheet.create({
@@ -142,13 +153,11 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
   },
   btn: {
-    width: 32,
-    height: 32,
     alignItems: 'center',
     justifyContent: 'center',
   },
   value: {
-    minWidth: 28,
+    minWidth: 32,
     textAlign: 'center',
     marginHorizontal: spacing.xs,
   },

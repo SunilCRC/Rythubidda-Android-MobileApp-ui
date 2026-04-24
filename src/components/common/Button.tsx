@@ -158,11 +158,13 @@ function resolveColors(variant: ButtonVariant, disabled: boolean) {
   }
   switch (variant) {
     case 'primary':
+      // Primary CTA buttons (Login, Sign Up, Place Order, Add to Cart, etc.)
+      // use the warm terracotta brand color #AB6639, not the green accent.
       return {
-        bg: colors.primary,
-        fg: colors.textOnPrimary,
-        border: colors.primary,
-        gradient: colors.gradients.primary,
+        bg: colors.cta,
+        fg: colors.white,
+        border: colors.cta,
+        gradient: [colors.ctaLight, colors.cta] as [string, string],
       };
     case 'secondary':
       return {

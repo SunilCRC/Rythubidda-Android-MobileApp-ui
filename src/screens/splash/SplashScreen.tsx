@@ -87,7 +87,7 @@ export const SplashScreen: React.FC = () => {
         }}
       >
         <FastImage
-          source={require('../../assets/images/logo.png')}
+          source={require('../../assets/images/cow-animation.gif')}
           style={styles.logo}
           resizeMode={FastImage.resizeMode.contain}
         />

@@ -14,8 +14,8 @@ import { EmptyState, Skeleton, Text } from '../../components/common';
 import { Container } from '../../components/layout/Container';
 import { ProductCard } from '../../components/ProductCard';
 import { colors } from '../../theme/colors';
-import { radius, spacing } from '../../theme/spacing';
-import { fonts, fontSizes } from '../../theme/typography';
+import { radius, shadows, spacing } from '../../theme/spacing';
+import { fonts, fontSizes, fontWeights } from '../../theme/typography';
 import { STORAGE_KEYS } from '../../constants/storage';
 import { toArray } from '../../utils/format';
 import { hasProductImage } from '../../utils/image';
@@ -30,6 +30,7 @@ export const SearchScreen: React.FC = () => {
   const [recents, setRecents] = useState<string[]>([]);
   const [results, setResults] = useState<Product[]>([]);
   const [loading, setLoading] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
   const inputRef = useRef<TextInput>(null);
 
   useEffect(() => {
@@ -77,25 +78,43 @@ export const SearchScreen: React.FC = () => {
 
   return (
     <Container edges={['top']}>
-      <View style={styles.topBar}>
-        <Pressable onPress={() => navigation.goBack()} hitSlop={10} style={styles.back}>
+      {/* Sticky search bar — lives outside the scrollable content */}
+      <View style={styles.stickyBar}>
+        <Pressable
+          onPress={() => navigation.goBack()}
+          hitSlop={10}
+          style={styles.back}
+          android_ripple={{ color: colors.pressed, borderless: true, radius: 22 }}
+        >
           <Icon name="arrow-left" size={22} color={colors.textPrimary} />
         </Pressable>
-        <View style={styles.searchInput}>
-          <Icon name="search" size={18} color={colors.textTertiary} />
+        <View
+          style={[
+            styles.searchInput,
+            {
+              borderColor: isFocused ? colors.primary : colors.border,
+              borderWidth: isFocused ? 1.5 : 1,
+            },
+          ]}
+        >
+          <Icon name="search" size={18} color={colors.primary} />
           <TextInput
             ref={inputRef}
             style={styles.input}
             placeholder="Search products..."
-            placeholderTextColor={colors.textMuted}
+            placeholderTextColor={colors.textSecondary}
+            selectionColor={colors.primary}
+            cursorColor={colors.primary}
             value={query}
             onChangeText={setQuery}
+            onFocus={() => setIsFocused(true)}
+            onBlur={() => setIsFocused(false)}
             onSubmitEditing={() => addToRecents(query)}
             returnKeyType="search"
           />
           {query ? (
             <Pressable onPress={() => setQuery('')} hitSlop={6}>
-              <Icon name="x" size={16} color={colors.textTertiary} />
+              <Icon name="x" size={16} color={colors.primary} />
             </Pressable>
           ) : null}
         </View>
@@ -188,12 +207,19 @@ export const SearchScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
-  topBar: {
+  // Sticky bar lifts above the list with a shadow + white surface so it
+  // reads as "floating" over scrolling content below.
+  stickyBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.sm,
+    paddingHorizontal: spacing.base,
     paddingVertical: spacing.sm,
     gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.divider,
+    ...shadows.sm,
+    zIndex: 10,
   },
   back: {
     width: 40,
@@ -206,8 +232,8 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.palette.secondary[100],
-    borderRadius: radius.full,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
     paddingHorizontal: spacing.base,
     paddingVertical: spacing.sm,
     gap: spacing.sm,
@@ -217,6 +243,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontFamily: fonts.regular,
     fontSize: fontSizes.base,
+    fontWeight: fontWeights.semibold,
     color: colors.textPrimary,
     padding: 0,
   },

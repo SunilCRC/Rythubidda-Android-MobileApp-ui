@@ -170,8 +170,8 @@ export const MainTabs: React.FC = () => (
   <Tab.Navigator
     screenOptions={({ route }) => ({
       headerShown: false,
-      tabBarActiveTintColor: colors.primary,
-      tabBarInactiveTintColor: colors.textTertiary,
+      tabBarActiveTintColor: colors.primary,        // #AB6639 — brand
+      tabBarInactiveTintColor: colors.textSecondary, // darker than before — readable
       tabBarStyle: {
         backgroundColor: colors.surface,
         borderTopColor: colors.divider,
@@ -179,7 +179,7 @@ export const MainTabs: React.FC = () => (
         paddingBottom: 8,
         paddingTop: 6,
       },
-      tabBarLabelStyle: { fontSize: 11, fontWeight: '600', marginTop: 2 },
+      tabBarLabelStyle: { fontSize: 11, fontWeight: '700', marginTop: 2 },
       tabBarIcon: ({ color, size, focused }) => {
         if (route.name === 'CartTab')
           return <CartTabIcon color={color} size={size} focused={focused} />;

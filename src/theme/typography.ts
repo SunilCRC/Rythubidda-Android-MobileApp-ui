@@ -70,75 +70,75 @@ export const textVariants: Record<string, TextVariant> = {
     fontFamily: fonts.regular,
     fontSize: fontSizes['5xl'],
     lineHeight: lineHeights['5xl'],
-    fontWeight: fontWeights.bold,
+    fontWeight: fontWeights.extrabold,
     letterSpacing: -0.5,
   },
   h2: {
     fontFamily: fonts.regular,
     fontSize: fontSizes['4xl'],
     lineHeight: lineHeights['4xl'],
-    fontWeight: fontWeights.bold,
+    fontWeight: fontWeights.extrabold,
   },
   h3: {
     fontFamily: fonts.regular,
     fontSize: fontSizes['3xl'],
     lineHeight: lineHeights['3xl'],
-    fontWeight: fontWeights.semibold,
+    fontWeight: fontWeights.bold,
   },
   h4: {
     fontFamily: fonts.regular,
     fontSize: fontSizes['2xl'],
     lineHeight: lineHeights['2xl'],
-    fontWeight: fontWeights.semibold,
+    fontWeight: fontWeights.bold,
   },
   h5: {
     fontFamily: fonts.regular,
     fontSize: fontSizes.xl,
     lineHeight: lineHeights.xl,
-    fontWeight: fontWeights.semibold,
+    fontWeight: fontWeights.bold,
   },
   h6: {
     fontFamily: fonts.regular,
     fontSize: fontSizes.lg,
     lineHeight: lineHeights.lg,
-    fontWeight: fontWeights.semibold,
+    fontWeight: fontWeights.bold,
   },
   body: {
     fontFamily: fonts.regular,
     fontSize: fontSizes.base,
     lineHeight: lineHeights.base,
-    fontWeight: fontWeights.regular,
+    fontWeight: fontWeights.medium,       // bumped: no 400 anywhere
   },
   bodyBold: {
     fontFamily: fonts.regular,
     fontSize: fontSizes.base,
     lineHeight: lineHeights.base,
-    fontWeight: fontWeights.semibold,
+    fontWeight: fontWeights.bold,         // bumped to true bold
   },
   bodySmall: {
     fontFamily: fonts.regular,
     fontSize: fontSizes.sm,
     lineHeight: lineHeights.sm,
-    fontWeight: fontWeights.regular,
+    fontWeight: fontWeights.medium,       // bumped
   },
   caption: {
     fontFamily: fonts.regular,
     fontSize: fontSizes.xs,
     lineHeight: lineHeights.xs,
-    fontWeight: fontWeights.regular,
+    fontWeight: fontWeights.medium,       // bumped
   },
   button: {
     fontFamily: fonts.regular,
     fontSize: fontSizes.md,
     lineHeight: lineHeights.md,
-    fontWeight: fontWeights.semibold,
+    fontWeight: fontWeights.bold,         // 700 per spec
     letterSpacing: 0.3,
   },
   label: {
     fontFamily: fonts.regular,
     fontSize: fontSizes.sm,
     lineHeight: lineHeights.sm,
-    fontWeight: fontWeights.medium,
+    fontWeight: fontWeights.semibold,     // 600 per spec
   },
 };
 
