@@ -13,3 +13,7 @@ export { SignInPrompt } from './SignInPrompt';
 export { ErrorBoundary } from './ErrorBoundary';
 export { QuantityStepper } from './QuantityStepper';
 export { VariantPicker } from './VariantPicker';
+export { OTPInput } from './OTPInput';
+export type { OTPInputHandle } from './OTPInput';
+export { PasswordStrengthIndicator } from './PasswordStrengthIndicator';
+export { AccordionItem } from './AccordionItem';

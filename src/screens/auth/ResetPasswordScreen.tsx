@@ -1,16 +1,24 @@
 import React, { useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet } from 'react-native';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+} from 'react-native';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { Button, Input, Text } from '../../components/common';
+import {
+  Button,
+  Input,
+  PasswordStrengthIndicator,
+} from '../../components/common';
 import { Container } from '../../components/layout/Container';
-import { ScreenHeader } from '../../components/layout/ScreenHeader';
+import { AuthHeader } from '../../components/layout/AuthHeader';
 import { resetPasswordSchema, ResetPasswordInput } from '../../utils/validation';
 import { authService } from '../../api/services';
 import { useAuthStore } from '../../store';
 import { showToast } from '../../utils/toast';
-import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
 import type { AuthStackParamList } from '../../navigation/types';
 
@@ -22,20 +30,23 @@ export const ResetPasswordScreen: React.FC<Props> = ({ navigation }) => {
   const {
     control,
     handleSubmit,
+    watch,
     formState: { errors },
   } = useForm<ResetPasswordInput>({
     resolver: zodResolver(resetPasswordSchema),
     defaultValues: { newPassword: '', confirmPassword: '' },
   });
 
+  const newPassword = watch('newPassword');
+
   const onSubmit = async (data: ResetPasswordInput) => {
     setSubmitting(true);
     try {
       await authService.resetPassword(data.newPassword);
-      showToast.success('Password updated');
       await refreshProfile();
-      // Token from OTP verification already set — dismiss the auth modal
-      navigation.getParent()?.goBack();
+      showToast.success('Password Reset Successfully!', 'You are now signed in.');
+      // Brief pause so user sees the toast before dismissing the modal
+      setTimeout(() => navigation.getParent()?.goBack(), 400);
     } catch (e: any) {
       showToast.error('Reset failed', e?.message);
     } finally {
@@ -45,16 +56,20 @@ export const ResetPasswordScreen: React.FC<Props> = ({ navigation }) => {
 
   return (
     <Container>
-      <ScreenHeader title="New password" />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ flex: 1 }}
       >
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-          <Text variant="h4">Create a new password</Text>
-          <Text variant="bodySmall" color={colors.textSecondary} style={styles.sub}>
-            Choose a strong password you haven't used before.
-          </Text>
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+        >
+          <AuthHeader
+            showBack
+            icon="shield"
+            title="Reset Password"
+            subtitle="Create a strong new password for your account."
+          />
 
           <Controller
             control={control}
@@ -71,6 +86,9 @@ export const ResetPasswordScreen: React.FC<Props> = ({ navigation }) => {
               />
             )}
           />
+
+          <PasswordStrengthIndicator password={newPassword || ''} showChecklist />
+
           <Controller
             control={control}
             name="confirmPassword"
@@ -88,7 +106,7 @@ export const ResetPasswordScreen: React.FC<Props> = ({ navigation }) => {
           />
 
           <Button
-            title="Update password"
+            title="Reset Password"
             onPress={handleSubmit(onSubmit)}
             loading={submitting}
             fullWidth
@@ -102,6 +120,5 @@ export const ResetPasswordScreen: React.FC<Props> = ({ navigation }) => {
 };
 
 const styles = StyleSheet.create({
-  scroll: { padding: spacing.xl },
-  sub: { marginTop: spacing.xs, marginBottom: spacing.xl },
+  scroll: { padding: spacing.xl, paddingTop: spacing.lg },
 });

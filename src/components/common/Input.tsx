@@ -57,7 +57,12 @@ export const Input = forwardRef<TextInput, Props>(
     return (
       <View style={[styles.container, containerStyle]}>
         {label ? (
-          <Text variant="label" color={colors.textSecondary} style={styles.label}>
+          <Text
+            variant="label"
+            weight="700"
+            color={colors.textPrimary}
+            style={styles.label}
+          >
             {label}
           </Text>
         ) : null}
@@ -68,12 +73,19 @@ export const Input = forwardRef<TextInput, Props>(
           ]}
         >
           {leftIcon ? (
-            <Icon name={leftIcon} size={18} color={colors.textTertiary} style={styles.leftIcon} />
+            <Icon
+              name={leftIcon}
+              size={18}
+              color={colors.primary}
+              style={styles.leftIcon}
+            />
           ) : null}
           <TextInput
             ref={ref}
             style={[styles.input, style as TextStyle]}
-            placeholderTextColor={colors.textMuted}
+            placeholderTextColor={colors.textTertiary}
+            selectionColor={colors.primary}
+            cursorColor={colors.primary}
             secureTextEntry={isPassword && !pwdVisible}
             onFocus={(e: any) => {
               setFocused(true);
@@ -94,21 +106,31 @@ export const Input = forwardRef<TextInput, Props>(
               <Icon
                 name={pwdVisible ? 'eye-off' : 'eye'}
                 size={18}
-                color={colors.textTertiary}
+                color={colors.primary}
               />
             </Pressable>
           ) : rightIcon ? (
             <Pressable onPress={onRightIconPress} hitSlop={8} style={styles.rightAction}>
-              <Icon name={rightIcon} size={18} color={colors.textTertiary} />
+              <Icon name={rightIcon} size={18} color={colors.primary} />
             </Pressable>
           ) : null}
         </View>
         {hasError ? (
-          <Text variant="caption" color={colors.error} style={styles.helper}>
+          <Text
+            variant="caption"
+            weight="700"
+            color={colors.error}
+            style={styles.helper}
+          >
             {error}
           </Text>
         ) : helper ? (
-          <Text variant="caption" color={colors.textTertiary} style={styles.helper}>
+          <Text
+            variant="caption"
+            weight="600"
+            color={colors.textSecondary}
+            style={styles.helper}
+          >
             {helper}
           </Text>
         ) : null}
@@ -123,15 +145,16 @@ const styles = StyleSheet.create({
   field: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
-    borderRadius: radius.base,
+    borderWidth: 1.5,
+    borderRadius: radius.lg,
     paddingHorizontal: spacing.base,
-    minHeight: 48,
+    minHeight: 54,
   },
   input: {
     flex: 1,
     fontFamily: fonts.regular,
     fontSize: fontSizes.base,
+    fontWeight: '600',
     color: colors.textPrimary,
     paddingVertical: spacing.sm,
   },

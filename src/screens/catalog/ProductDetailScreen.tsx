@@ -1,10 +1,14 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   Dimensions,
+  FlatList,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   Pressable,
   ScrollView,
   StyleSheet,
   View,
+  ViewToken,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import FastImage from 'react-native-fast-image';
@@ -12,38 +16,52 @@ import { useQuery } from '@tanstack/react-query';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { catalogService } from '../../api/services';
 import {
+  AccordionItem,
   Button,
   Card,
-  Divider,
   LoadingScreen,
-  Price,
+  QuantityStepper,
   StarRating,
   Text,
 } from '../../components/common';
 import { Container } from '../../components/layout/Container';
-import { ScreenHeader } from '../../components/layout/ScreenHeader';
+import { StickyBottomBar } from '../../components/layout/StickyBottomBar';
+import { ProductCard } from '../../components/ProductCard';
 import { colors } from '../../theme/colors';
 import { radius, shadows, spacing } from '../../theme/spacing';
-import { pickFirstImage, DEFAULT_IMAGE_PLACEHOLDER } from '../../utils/image';
-import { useCartStore } from '../../store';
+import { DEFAULT_IMAGE_PLACEHOLDER, pickFirstImage } from '../../utils/image';
+import { useCartLineFor, useCartStore } from '../../store';
 import { useRequireAuth } from '../../hooks/useRequireAuth';
-import { formatDate } from '../../utils/format';
+import { formatDate, formatINR } from '../../utils/format';
 import { showToast } from '../../utils/toast';
 import { haptics } from '../../utils/haptics';
 import { APP_CONFIG } from '../../constants/config';
 import type { HomeStackParamList } from '../../navigation/types';
+import type { Product } from '../../types';
 
 type Props = NativeStackScreenProps<HomeStackParamList, 'ProductDetail'>;
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
+const HIGHLIGHTS: Array<{ icon: string; label: string }> = [
+  { icon: 'feather', label: 'Farm Fresh' },
+  { icon: 'sun', label: 'Naturally Grown' },
+  { icon: 'shield', label: 'No Preservatives' },
+  { icon: 'map-pin', label: 'Locally Sourced' },
+];
+
 export const ProductDetailScreen: React.FC<Props> = ({ route, navigation }) => {
   const { productId } = route.params;
   const addItem = useCartStore(s => s.addItem);
+  const updateQty = useCartStore(s => s.updateQty);
+  const removeItem = useCartStore(s => s.removeItem);
   const requireAuth = useRequireAuth();
-  const [qty, setQty] = useState(1);
-  const [selectedOptionId, setSelectedOptionId] = useState<string | number | undefined>();
+
+  const [selectedOptionId, setSelectedOptionId] = useState<
+    string | number | undefined
+  >();
   const [activeImage, setActiveImage] = useState(0);
+  const [wishlisted, setWishlisted] = useState(false);
   const [adding, setAdding] = useState(false);
   const [imageFailed, setImageFailed] = useState<Record<number, boolean>>({});
 
@@ -55,258 +73,492 @@ export const ProductDetailScreen: React.FC<Props> = ({ route, navigation }) => {
   const images = useMemo(() => {
     if (!product) return [];
     const list = [
+      ...(product.images || []),
+      ...(product.gallery || []),
       product.image,
       product.imageUrl,
-      ...(product.gallery || []),
-      ...(product.images || []),
-    ].filter(Boolean) as string[];
+    ].filter((v, i, arr) => !!v && arr.indexOf(v) === i) as string[];
     return list.length > 0 ? list : [''];
   }, [product]);
 
-  if (isLoading || !product) return <LoadingScreen />;
+  const { data: related } = useQuery({
+    queryKey: ['relatedProducts', product?.categoryId],
+    queryFn: () =>
+      product?.categoryId
+        ? catalogService.getProductsByCategory(product.categoryId)
+        : Promise.resolve([]),
+    enabled: !!product?.categoryId,
+  });
 
-  const selectedOption =
-    product.qtyOptions?.find(o => (o.id ?? o.qtyOptionId) === selectedOptionId) ||
-    product.qtyOptions?.[0];
-  const effectivePrice = selectedOption?.price ?? product.price;
-  const effectiveMrp = selectedOption?.mrp ?? product.mrp;
+  const onImageViewable = useRef(
+    ({ viewableItems }: { viewableItems: ViewToken[] }) => {
+      if (viewableItems.length > 0 && viewableItems[0].index != null) {
+        setActiveImage(viewableItems[0].index);
+      }
+    },
+  ).current;
 
-  const handleAddToCart = async (): Promise<boolean> => {
-    if (adding) return false;
+  // ────────────────────────────────────────────────────────────────
+  // All derived values + hooks live ABOVE the early return so React
+  // sees the same number of hook calls on every render (crucial —
+  // otherwise you hit "Rendered more hooks than previous render").
+  // ────────────────────────────────────────────────────────────────
+  const selectedOption = useMemo(() => {
+    const opts = product?.qtyOptions;
+    if (!opts || opts.length === 0) return undefined;
+    return opts.find(o => (o.id ?? o.qtyOptionId) === selectedOptionId) ?? opts[0];
+  }, [product, selectedOptionId]);
+
+  const effectivePrice = selectedOption?.price ?? product?.price ?? 0;
+  const effectiveMrp = selectedOption?.mrp ?? product?.mrp;
+  const hasDiscount = !!(effectiveMrp && effectiveMrp > effectivePrice);
+  const discountPercent = hasDiscount
+    ? Math.round(((effectiveMrp! - effectivePrice) / effectiveMrp!) * 100)
+    : undefined;
+  const unit = selectedOption?.name ?? selectedOption?.label ?? product?.unit;
+  const outOfStock = product?.inStock === false;
+
+  // Cart line for the current variant — safe to pass undefined ids.
+  const cartLine = useCartLineFor(
+    product?.id ?? product?.productId,
+    selectedOption?.id ?? selectedOption?.qtyOptionId,
+  );
+  const cartQty = cartLine?.qty ?? 0;
+
+  const handleAddToCart = useCallback(async () => {
+    if (adding || !product) return;
     haptics.select();
-    if (!requireAuth()) return false;
+    if (!requireAuth()) return;
 
     const id = product.id ?? product.productId;
     if (!id || !effectivePrice) {
       showToast.error('Unable to add — missing product info');
-      return false;
+      return;
     }
-
     setAdding(true);
     try {
       await addItem({
         productId: id,
-        qty,
+        qty: 1,
         price: effectivePrice,
         qtyOptionId: selectedOption?.id ?? selectedOption?.qtyOptionId,
       });
       haptics.success();
       showToast.success('Added to cart');
-      return true;
     } catch (e: any) {
       haptics.error();
       showToast.error('Could not add to cart', e?.message ?? 'Please try again');
-      return false;
+    } finally {
+      setAdding(false);
+    }
+  }, [adding, addItem, effectivePrice, product, requireAuth, selectedOption]);
+
+  // Now we can safely bail out — all hooks have been called.
+  if (isLoading || !product) return <LoadingScreen />;
+
+  const handleIncrement = async () => {
+    const itemId = cartLine?.itemId ?? cartLine?.cartItemId;
+    if (!itemId || adding) return;
+    setAdding(true);
+    try {
+      await updateQty(
+        itemId,
+        Math.min(APP_CONFIG.MAX_CART_ITEM_QTY, cartQty + 1),
+      );
+    } catch (err: any) {
+      showToast.error('Could not update', err?.message);
     } finally {
       setAdding(false);
     }
   };
 
-  const handleBuyNow = async () => {
-    const ok = await handleAddToCart();
-    if (ok) navigation.getParent()?.navigate('CartTab', { screen: 'CartMain' });
+  const handleDecrement = async () => {
+    const itemId = cartLine?.itemId ?? cartLine?.cartItemId;
+    if (!itemId || adding) return;
+    setAdding(true);
+    try {
+      if (cartQty <= 1) await removeItem(itemId);
+      else await updateQty(itemId, cartQty - 1);
+    } catch (err: any) {
+      showToast.error('Could not update', err?.message);
+    } finally {
+      setAdding(false);
+    }
   };
 
-  return (
-    <Container edges={['top']}>
-      <ScreenHeader title="Product details" />
-      <ScrollView contentContainerStyle={{ paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
-        {/* Image gallery */}
-        <View>
-          <FastImage
-            source={{
-              uri: imageFailed[activeImage]
-                ? DEFAULT_IMAGE_PLACEHOLDER
-                : pickFirstImage(images[activeImage]),
-            }}
-            style={styles.mainImage}
-            resizeMode={FastImage.resizeMode.contain}
-            onError={() =>
-              setImageFailed(prev => ({ ...prev, [activeImage]: true }))
-            }
-          />
-          {images.length > 1 ? (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.thumbs}
-            >
-              {images.map((img, i) => (
-                <Pressable
-                  key={i}
-                  onPress={() => setActiveImage(i)}
-                  style={[
-                    styles.thumb,
-                    i === activeImage && { borderColor: colors.primary, borderWidth: 2 },
-                  ]}
-                >
-                  <FastImage
-                    source={{ uri: pickFirstImage(img) }}
-                    style={styles.thumbImage}
-                    resizeMode={FastImage.resizeMode.cover}
-                  />
-                </Pressable>
-              ))}
-            </ScrollView>
-          ) : null}
-        </View>
+  const totalPrice = effectivePrice * Math.max(cartQty, 1);
 
-        {/* Title, rating, price */}
-        <View style={styles.section}>
-          <Text variant="h4" color={colors.textPrimary}>
-            {product.name}
-          </Text>
-          {product.rating && product.rating > 0 ? (
-            <View style={styles.rating}>
-              <StarRating rating={product.rating} size={14} showLabel />
-              <Text variant="bodySmall" color={colors.textSecondary} style={{ marginLeft: spacing.sm }}>
-                {product.totalReviews ?? product.reviews?.length ?? 0} reviews
+  const relatedWithImages = (related ?? [])
+    .filter(
+      p => (p.id ?? p.productId) !== (product.id ?? product.productId),
+    )
+    .slice(0, 12);
+
+  return (
+    <Container edges={[]}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingBottom: 140 }}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* ===== Hero: carousel with floating chrome ===== */}
+        <View style={styles.hero}>
+          <FlatList
+            data={images}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            keyExtractor={(item, i) => `img-${i}-${item}`}
+            onViewableItemsChanged={onImageViewable}
+            viewabilityConfig={{ viewAreaCoveragePercentThreshold: 60 }}
+            renderItem={({ item, index }) => (
+              <FastImage
+                source={{
+                  uri: imageFailed[index]
+                    ? DEFAULT_IMAGE_PLACEHOLDER
+                    : pickFirstImage(item),
+                }}
+                style={styles.heroImage}
+                resizeMode={FastImage.resizeMode.contain}
+                onError={() =>
+                  setImageFailed(prev => ({ ...prev, [index]: true }))
+                }
+              />
+            )}
+          />
+
+          {/* Floating back + wishlist */}
+          <View style={styles.floatingTop}>
+            <Pressable
+              onPress={() => navigation.goBack()}
+              style={styles.iconBubble}
+              android_ripple={{ color: colors.pressed, borderless: true, radius: 22 }}
+              hitSlop={6}
+            >
+              <Icon name="arrow-left" size={20} color={colors.textPrimary} />
+            </Pressable>
+            <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+              <Pressable
+                onPress={() => {
+                  setWishlisted(w => !w);
+                  haptics.tap();
+                }}
+                style={styles.iconBubble}
+                android_ripple={{ color: colors.pressed, borderless: true, radius: 22 }}
+                hitSlop={6}
+              >
+                <Icon
+                  name="heart"
+                  size={20}
+                  color={wishlisted ? colors.error : colors.textPrimary}
+                />
+              </Pressable>
+              <Pressable
+                onPress={() => haptics.tap()}
+                style={styles.iconBubble}
+                android_ripple={{ color: colors.pressed, borderless: true, radius: 22 }}
+                hitSlop={6}
+              >
+                <Icon name="share-2" size={20} color={colors.textPrimary} />
+              </Pressable>
+            </View>
+          </View>
+
+          {/* Discount pill */}
+          {discountPercent ? (
+            <View style={styles.heroDiscount}>
+              <Text variant="caption" weight="800" color={colors.white}>
+                {discountPercent}% OFF
               </Text>
             </View>
           ) : null}
-          <View style={{ marginTop: spacing.sm }}>
-            <Price amount={effectivePrice} mrp={effectiveMrp ?? undefined} size="lg" />
-            {selectedOption?.name || product.unit ? (
-              <Text
-                variant="bodySmall"
-                color={colors.textSecondary}
-                style={{ marginTop: 4 }}
-              >
-                per {selectedOption?.name || product.unit}
-              </Text>
-            ) : null}
-          </View>
+
+          {/* Dots */}
+          {images.length > 1 ? (
+            <View style={styles.dotRow}>
+              {images.map((_, i) => (
+                <View
+                  key={i}
+                  style={[
+                    styles.dot,
+                    i === activeImage && styles.dotActive,
+                    i === activeImage && { width: 20 },
+                  ]}
+                />
+              ))}
+            </View>
+          ) : null}
         </View>
 
-        {/* Quantity options */}
-        {product.qtyOptions && product.qtyOptions.length > 0 ? (
-          <View style={styles.section}>
-            <Text variant="bodyBold" color={colors.textPrimary} style={{ marginBottom: spacing.sm }}>
-              Select Size / Variant
+        {/* ===== Info card (overlaps hero bottom) ===== */}
+        <View style={styles.infoCard}>
+          <Text
+            variant="h3"
+            weight="800"
+            color={colors.textPrimary}
+            style={{ letterSpacing: -0.3 }}
+          >
+            {product.name}
+          </Text>
+          {product.shortDescription ? (
+            <Text
+              variant="bodySmall"
+              weight="600"
+              color={colors.textSecondary}
+              style={{ marginTop: 4 }}
+            >
+              {product.shortDescription}
             </Text>
-            <View style={styles.options}>
+          ) : null}
+
+          {/* Rating + In-stock */}
+          <View style={styles.rowSpace}>
+            {product.rating && product.rating > 0 ? (
+              <View style={styles.rating}>
+                <StarRating rating={product.rating} size={14} showLabel />
+                <Text
+                  variant="bodySmall"
+                  weight="600"
+                  color={colors.textSecondary}
+                  style={{ marginLeft: 6 }}
+                >
+                  ({product.totalReviews ?? product.reviews?.length ?? 0} reviews)
+                </Text>
+              </View>
+            ) : (
+              <View />
+            )}
+            {!outOfStock ? (
+              <View style={styles.inStockPill}>
+                <Icon name="check-circle" size={12} color={colors.success} />
+                <Text
+                  variant="caption"
+                  weight="700"
+                  color={colors.success}
+                  style={{ marginLeft: 4 }}
+                >
+                  In Stock
+                </Text>
+              </View>
+            ) : (
+              <View style={[styles.inStockPill, { backgroundColor: colors.errorSoft }]}>
+                <Icon name="alert-circle" size={12} color={colors.error} />
+                <Text
+                  variant="caption"
+                  weight="700"
+                  color={colors.error}
+                  style={{ marginLeft: 4 }}
+                >
+                  Out of Stock
+                </Text>
+              </View>
+            )}
+          </View>
+
+          {/* Price row */}
+          <View style={styles.priceRow}>
+            <Text variant="h2" weight="800" color={colors.textPrimary}>
+              {formatINR(effectivePrice)}
+            </Text>
+            {hasDiscount ? (
+              <>
+                <Text
+                  variant="bodyBold"
+                  weight="600"
+                  color={colors.textTertiary}
+                  style={styles.mrp}
+                >
+                  {formatINR(effectiveMrp!)}
+                </Text>
+                <Text
+                  variant="bodyBold"
+                  weight="800"
+                  color={colors.success}
+                  style={{ marginLeft: spacing.sm }}
+                >
+                  {discountPercent}% off
+                </Text>
+              </>
+            ) : null}
+          </View>
+          {unit ? (
+            <Text
+              variant="bodySmall"
+              weight="600"
+              color={colors.textSecondary}
+              style={{ marginTop: 2 }}
+            >
+              per {unit}
+            </Text>
+          ) : null}
+        </View>
+
+        {/* ===== Variant pills ===== */}
+        {product.qtyOptions && product.qtyOptions.length > 1 ? (
+          <View style={styles.section}>
+            <Text
+              variant="h6"
+              weight="700"
+              color={colors.textPrimary}
+              style={{ marginBottom: spacing.sm }}
+            >
+              Select Pack Size
+            </Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingRight: spacing.base }}
+            >
               {product.qtyOptions.map(opt => {
                 const id = opt.id ?? opt.qtyOptionId!;
-                const selected = (selectedOption?.id ?? selectedOption?.qtyOptionId) === id;
+                const selected =
+                  (selectedOption?.id ?? selectedOption?.qtyOptionId) === id;
                 const label = opt.name || opt.label || opt.value || '';
-                const hasDiscount = opt.mrp && opt.price && opt.mrp > opt.price;
                 return (
                   <Pressable
                     key={`opt-${id}`}
-                    onPress={() => setSelectedOptionId(id)}
+                    onPress={() => {
+                      setSelectedOptionId(id);
+                      haptics.tap();
+                    }}
                     style={[
-                      styles.option,
-                      selected && {
-                        borderColor: colors.primary,
-                        backgroundColor: colors.palette.primary[50],
-                      },
+                      styles.variantPill,
+                      selected
+                        ? { backgroundColor: colors.primary, borderColor: colors.primary }
+                        : { backgroundColor: colors.surface, borderColor: colors.primary },
                     ]}
                   >
                     <Text
-                      variant="bodySmall"
-                      color={selected ? colors.primaryDark : colors.textPrimary}
-                      weight={selected ? '700' : '600'}
+                      variant="bodyBold"
+                      weight="800"
+                      color={selected ? colors.white : colors.primary}
                     >
                       {label}
                     </Text>
                     {opt.price != null ? (
                       <Text
                         variant="caption"
-                        color={selected ? colors.primaryDark : colors.textSecondary}
+                        weight="700"
+                        color={selected ? colors.white : colors.textSecondary}
                         style={{ marginTop: 2 }}
                       >
-                        ₹{opt.price}
-                        {hasDiscount ? (
-                          <Text variant="caption" color={colors.textMuted}>
-                            {'  '}
-                            <Text
-                              variant="caption"
-                              color={colors.textMuted}
-                              style={{ textDecorationLine: 'line-through' }}
-                            >
-                              ₹{opt.mrp}
-                            </Text>
-                          </Text>
-                        ) : null}
+                        {formatINR(opt.price)}
                       </Text>
                     ) : null}
                   </Pressable>
                 );
               })}
-            </View>
+            </ScrollView>
           </View>
         ) : null}
 
-        {/* Quantity stepper */}
-        <View style={[styles.section, styles.qtyRow]}>
-          <Text variant="bodyBold">Quantity</Text>
-          <View style={styles.stepper}>
-            <Pressable
-              onPress={() => setQty(q => Math.max(1, q - 1))}
-              style={styles.stepBtn}
-              disabled={qty <= 1}
-              hitSlop={6}
-            >
-              <Icon name="minus" size={18} color={qty <= 1 ? colors.disabled : colors.primary} />
-            </Pressable>
-            <Text variant="h6" color={colors.textPrimary} style={styles.stepValue}>
-              {qty}
-            </Text>
-            <Pressable
-              onPress={() => setQty(q => Math.min(APP_CONFIG.MAX_CART_ITEM_QTY, q + 1))}
-              style={styles.stepBtn}
-              disabled={qty >= APP_CONFIG.MAX_CART_ITEM_QTY}
-              hitSlop={6}
-            >
-              <Icon
-                name="plus"
-                size={18}
-                color={qty >= APP_CONFIG.MAX_CART_ITEM_QTY ? colors.disabled : colors.primary}
-              />
-            </Pressable>
+        {/* ===== Highlights ===== */}
+        <View style={styles.section}>
+          <Text
+            variant="h6"
+            weight="700"
+            color={colors.textPrimary}
+            style={{ marginBottom: spacing.sm }}
+          >
+            Product Highlights
+          </Text>
+          <View style={styles.highlightsRow}>
+            {HIGHLIGHTS.map(h => (
+              <View key={h.label} style={styles.highlightChip}>
+                <View style={styles.highlightIcon}>
+                  <Icon name={h.icon} size={16} color={colors.primary} />
+                </View>
+                <Text
+                  variant="caption"
+                  weight="700"
+                  color={colors.textPrimary}
+                  align="center"
+                  style={{ marginTop: 4 }}
+                >
+                  {h.label}
+                </Text>
+              </View>
+            ))}
           </View>
         </View>
 
-        <Divider />
-
-        {/* Description */}
-        {product.description ? (
-          <View style={styles.section}>
-            <Text variant="h6" color={colors.textPrimary} style={{ marginBottom: spacing.sm }}>
-              About this product
+        {/* ===== Details accordions ===== */}
+        <View style={styles.section}>
+          {product.description ? (
+            <AccordionItem
+              title="Description"
+              icon="file-text"
+              defaultOpen
+            >
+              <Text variant="body" weight="500" color={colors.textSecondary}>
+                {product.description}
+              </Text>
+            </AccordionItem>
+          ) : null}
+          <AccordionItem title="Storage Instructions" icon="archive">
+            <Text variant="body" weight="500" color={colors.textSecondary}>
+              Store in a cool, dry place away from direct sunlight. Transfer to an
+              airtight container after opening. Keeps best for up to 6 months when
+              stored properly.
             </Text>
-            <Text variant="body" color={colors.textSecondary}>
-              {product.description}
+          </AccordionItem>
+          <AccordionItem title="Farmer / Source Info" icon="map">
+            <Text variant="body" weight="500" color={colors.textSecondary}>
+              Sourced directly from small farms across South India. Every batch is
+              quality-checked before being packed and shipped to your door.
             </Text>
-          </View>
-        ) : null}
+          </AccordionItem>
+        </View>
 
-        {/* Reviews */}
+        {/* ===== Reviews ===== */}
         {product.reviews && product.reviews.length > 0 ? (
           <View style={styles.section}>
-            <Text variant="h6" color={colors.textPrimary} style={{ marginBottom: spacing.base }}>
+            <Text
+              variant="h6"
+              weight="700"
+              color={colors.textPrimary}
+              style={{ marginBottom: spacing.sm }}
+            >
               Customer Reviews
             </Text>
             {product.reviews.slice(0, 5).map((r, i) => (
-              <Card key={`r-${r.id ?? i}`} elevated={false} style={{ marginBottom: spacing.sm }}>
+              <Card
+                key={`r-${r.id ?? i}`}
+                elevated={false}
+                style={{ marginBottom: spacing.sm }}
+              >
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                   <View style={{ flex: 1 }}>
-                    <Text variant="bodyBold" color={colors.textPrimary}>
+                    <Text variant="bodyBold" weight="700" color={colors.textPrimary}>
                       {r.customerName || 'Customer'}
                     </Text>
                     <StarRating rating={r.rating} size={12} />
                   </View>
-                  <Text variant="caption" color={colors.textTertiary}>
+                  <Text
+                    variant="caption"
+                    weight="600"
+                    color={colors.textTertiary}
+                  >
                     {formatDate(r.createdAt)}
                   </Text>
                 </View>
                 {r.title ? (
-                  <Text variant="bodyBold" style={{ marginTop: spacing.xs }}>
+                  <Text
+                    variant="bodyBold"
+                    weight="700"
+                    color={colors.textPrimary}
+                    style={{ marginTop: spacing.xs }}
+                  >
                     {r.title}
                   </Text>
                 ) : null}
                 {r.comment || r.message ? (
-                  <Text variant="bodySmall" color={colors.textSecondary} style={{ marginTop: 2 }}>
+                  <Text
+                    variant="bodySmall"
+                    weight="500"
+                    color={colors.textSecondary}
+                    style={{ marginTop: 2 }}
+                  >
                     {r.comment || r.message}
                   </Text>
                 ) : null}
@@ -314,86 +566,220 @@ export const ProductDetailScreen: React.FC<Props> = ({ route, navigation }) => {
             ))}
           </View>
         ) : null}
+
+        {/* ===== Related products ===== */}
+        {relatedWithImages.length > 0 ? (
+          <View style={[styles.section, { paddingBottom: spacing.xl }]}>
+            <Text
+              variant="h6"
+              weight="700"
+              color={colors.textPrimary}
+              style={{ marginBottom: spacing.sm }}
+            >
+              You May Also Like
+            </Text>
+            <FlatList
+              data={relatedWithImages}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              keyExtractor={(p: Product, i) =>
+                `rel-${p.id ?? p.productId ?? i}`
+              }
+              contentContainerStyle={{ gap: spacing.md, paddingRight: spacing.base }}
+              renderItem={({ item }) => (
+                <View style={{ width: 180 }}>
+                  <ProductCard
+                    product={item}
+                    width={180}
+                    onPress={() =>
+                      navigation.push('ProductDetail', {
+                        productId: (item.id || item.productId)!,
+                      })
+                    }
+                  />
+                </View>
+              )}
+            />
+          </View>
+        ) : null}
       </ScrollView>
 
-      {/* Bottom action bar */}
-      <View style={styles.bottomBar}>
-        <Button
-          title="Add to Cart"
-          onPress={handleAddToCart}
-          variant="outline"
-          loading={adding}
-          style={{ flex: 1, marginRight: spacing.sm }}
-          size="lg"
-        />
-        <Button
-          title="Buy Now"
-          onPress={handleBuyNow}
-          variant="cta"
-          loading={adding}
-          style={{ flex: 1 }}
-          size="lg"
-        />
-      </View>
+      {/* ===== Sticky bottom CTA ===== */}
+      <StickyBottomBar>
+        <View style={styles.stickyInner}>
+          <View style={{ flex: 1 }}>
+            <Text variant="caption" weight="600" color={colors.textSecondary}>
+              {cartQty > 0 ? 'Total' : 'Price'}
+            </Text>
+            <Text variant="h5" weight="800" color={colors.textPrimary}>
+              {formatINR(totalPrice)}
+            </Text>
+          </View>
+          {cartQty > 0 ? (
+            <View style={{ flex: 1.2 }}>
+              <QuantityStepper
+                qty={cartQty}
+                onIncrement={handleIncrement}
+                onDecrement={handleDecrement}
+                loading={adding}
+                min={0}
+                max={APP_CONFIG.MAX_CART_ITEM_QTY}
+                size="lg"
+                tone="primary"
+              />
+            </View>
+          ) : (
+            <Button
+              title="Add to Cart"
+              onPress={handleAddToCart}
+              loading={adding}
+              disabled={outOfStock}
+              size="lg"
+              leftIcon={<Icon name="shopping-cart" size={16} color={colors.white} />}
+              style={{ flex: 1.2 }}
+            />
+          )}
+        </View>
+      </StickyBottomBar>
     </Container>
   );
 };
 
+const HERO_H = SCREEN_W * 0.9;
+
 const styles = StyleSheet.create({
-  mainImage: {
+  hero: {
     width: SCREEN_W,
-    height: SCREEN_W * 0.85,
-    backgroundColor: colors.palette.secondary[100],
+    height: HERO_H,
+    backgroundColor: colors.tintSoft,
+    position: 'relative',
   },
-  thumbs: { padding: spacing.base, gap: spacing.sm },
-  thumb: {
-    width: 56,
-    height: 56,
-    borderRadius: radius.base,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginRight: spacing.sm,
+  heroImage: {
+    width: SCREEN_W,
+    height: HERO_H,
+    backgroundColor: colors.tintSoft,
   },
-  thumbImage: { width: '100%', height: '100%' },
-  section: { paddingHorizontal: spacing.base, paddingVertical: spacing.sm },
-  rating: { flexDirection: 'row', alignItems: 'center', marginTop: spacing.xs },
-  options: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  option: {
-    paddingHorizontal: spacing.base,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.base,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    marginRight: spacing.sm,
-    marginBottom: spacing.sm,
-  },
-  qtyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  stepper: {
+  floatingTop: {
+    position: 'absolute',
+    top: spacing.xl,
+    left: spacing.base,
+    right: spacing.base,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.palette.secondary[100],
+    justifyContent: 'space-between',
+  },
+  iconBubble: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadows.md,
+  },
+  heroDiscount: {
+    position: 'absolute',
+    // Sit below the floating chrome on the right so nothing overlaps.
+    top: spacing.xl + 56,
+    right: spacing.base,
+    backgroundColor: colors.error,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 4,
+    borderRadius: radius.full,
+    ...shadows.sm,
+  },
+  dotRow: {
+    position: 'absolute',
+    bottom: spacing.lg,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 6,
+  },
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.palette.neutral[300],
+  },
+  dotActive: {
+    backgroundColor: colors.primary,
+  },
+  infoCard: {
+    marginTop: -spacing.xl,
+    marginHorizontal: 0,
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: radius['2xl'],
+    borderTopRightRadius: radius['2xl'],
+    paddingHorizontal: spacing.base,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.base,
+  },
+  rowSpace: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: spacing.sm,
+  },
+  rating: { flexDirection: 'row', alignItems: 'center' },
+  inStockPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.successSoft,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
     borderRadius: radius.full,
   },
-  stepBtn: {
+  priceRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    marginTop: spacing.md,
+    flexWrap: 'wrap',
+  },
+  mrp: {
+    marginLeft: spacing.sm,
+    textDecorationLine: 'line-through',
+  },
+  section: {
+    paddingHorizontal: spacing.base,
+    paddingTop: spacing.lg,
+  },
+  variantPill: {
+    minWidth: 76,
+    alignItems: 'center',
+    paddingHorizontal: spacing.base,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.lg,
+    borderWidth: 1.5,
+    marginRight: spacing.sm,
+  },
+  highlightsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  highlightChip: {
+    flex: 1,
+    alignItems: 'center',
+    backgroundColor: colors.tintSoft,
+    paddingVertical: spacing.base,
+    paddingHorizontal: spacing.xs,
+    borderRadius: radius.lg,
+  },
+  highlightIcon: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: colors.white,
+    backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
     ...shadows.sm,
   },
-  stepValue: { minWidth: 32, textAlign: 'center', marginHorizontal: spacing.xs },
-  bottomBar: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    padding: spacing.base,
-    backgroundColor: colors.surface,
-    borderTopWidth: 1,
-    borderTopColor: colors.divider,
+  stickyInner: {
     flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
 });

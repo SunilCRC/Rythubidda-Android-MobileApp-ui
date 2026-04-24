@@ -1,11 +1,18 @@
 import React, { useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet } from 'react-native';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+} from 'react-native';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Button, Input, Text } from '../../components/common';
 import { Container } from '../../components/layout/Container';
-import { ScreenHeader } from '../../components/layout/ScreenHeader';
+import { AuthHeader } from '../../components/layout/AuthHeader';
 import { forgotPasswordSchema, ForgotPasswordInput } from '../../utils/validation';
 import { authService } from '../../api/services';
 import { showToast } from '../../utils/toast';
@@ -31,7 +38,7 @@ export const ForgotPasswordScreen: React.FC<Props> = ({ navigation }) => {
     try {
       const result = await authService.forgotPassword(phone);
       if (result.customerId) {
-        showToast.success('OTP sent');
+        showToast.success('Reset code sent');
         navigation.navigate('OTP', {
           customerId: result.customerId,
           phone,
@@ -49,16 +56,20 @@ export const ForgotPasswordScreen: React.FC<Props> = ({ navigation }) => {
 
   return (
     <Container>
-      <ScreenHeader title="Forgot password" />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ flex: 1 }}
       >
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-          <Text variant="h4">Reset your password</Text>
-          <Text variant="bodySmall" color={colors.textSecondary} style={styles.sub}>
-            Enter your mobile number. We'll send you an OTP to reset your password.
-          </Text>
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+        >
+          <AuthHeader
+            showBack
+            icon="lock"
+            title="Forgot Password?"
+            subtitle="No worries! Enter your registered mobile number and we'll send you a reset code."
+          />
 
           <Controller
             control={control}
@@ -78,13 +89,24 @@ export const ForgotPasswordScreen: React.FC<Props> = ({ navigation }) => {
           />
 
           <Button
-            title="Send OTP"
+            title="Send Reset Code"
             onPress={handleSubmit(onSubmit)}
             loading={submitting}
             fullWidth
             size="lg"
             style={{ marginTop: spacing.sm }}
           />
+
+          <View style={styles.footer}>
+            <Text variant="bodySmall" weight="600" color={colors.textSecondary}>
+              Remember your password?{' '}
+            </Text>
+            <Pressable onPress={() => navigation.goBack()} hitSlop={6}>
+              <Text variant="bodySmall" weight="800" color={colors.primary}>
+                Login
+              </Text>
+            </Pressable>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </Container>
@@ -92,6 +114,11 @@ export const ForgotPasswordScreen: React.FC<Props> = ({ navigation }) => {
 };
 
 const styles = StyleSheet.create({
-  scroll: { padding: spacing.xl },
-  sub: { marginTop: spacing.xs, marginBottom: spacing.xl },
+  scroll: { padding: spacing.xl, paddingTop: spacing.lg },
+  footer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: spacing.xl,
+  },
 });
