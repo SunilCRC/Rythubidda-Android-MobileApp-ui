@@ -2,7 +2,7 @@ import { apiGet, apiPost, apiRaw } from '../client';
 import { ENDPOINTS } from '../../constants/endpoints';
 import type {
   InvoiceInfo,
-  ReviewSubmission,
+  ReviewItem,
   SaleOrder,
   SaleOrderItem,
 } from '../../types';
@@ -59,8 +59,30 @@ export const orderService = {
       params: { id: orderId },
     }),
 
-  submitReviews: (reviews: ReviewSubmission[]) =>
-    apiPost<string>(ENDPOINTS.SUBMIT_REVIEWS, reviews),
+  /**
+   * Backend `POST /api/v1/shop/submitReviews` reads the request body as a
+   * raw JSON string and `ObjectMapper.readValue`s it into `OrderReviewDTO`.
+   * The expected shape is `{ orderId, reviews: ReviewItem[] }` — and crucially,
+   * each review is keyed by `saleOrderItemId` (not productId) with the
+   * rating sent as a string and the title as `headline`.
+   *
+   * The endpoint always returns HTTP 200 with a plain-text body — either
+   * `"Success: N reviews saved"` or `"ERROR: …"`. We detect the latter
+   * client-side and throw so the UI can surface the failure.
+   */
+  submitReviews: async (
+    orderId: number,
+    reviews: ReviewItem[],
+  ): Promise<string> => {
+    const result = await apiPost<string>(ENDPOINTS.SUBMIT_REVIEWS, {
+      orderId,
+      reviews,
+    });
+    if (typeof result === 'string' && /^\s*ERROR/i.test(result)) {
+      throw { status: 500, message: result.replace(/^\s*ERROR:?\s*/i, '') };
+    }
+    return result;
+  },
 
   cancel: (orderId: number | string) =>
     apiPost<string>(ENDPOINTS.CANCEL_ORDER, undefined, {

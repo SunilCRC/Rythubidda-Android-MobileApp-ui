@@ -582,7 +582,7 @@ export const ProductDetailScreen: React.FC<Props> = ({ route, navigation }) => {
                     <Text variant="bodyBold" weight="700" color={colors.textPrimary}>
                       {r.customerName || 'Customer'}
                     </Text>
-                    <StarRating rating={r.rating} size={12} />
+                    <StarRating rating={r.rating ?? 0} size={12} />
                   </View>
                   <Text
                     variant="caption"

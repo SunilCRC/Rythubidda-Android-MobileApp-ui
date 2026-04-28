@@ -55,6 +55,43 @@ export const OrderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
   );
   const canViewInvoice = canReview;
 
+  // Has the user already submitted at least one review for this order?
+  // The orders LIST endpoint attaches `productReviews` per order, so we
+  // can decide the button label without a separate fetch.
+  const reviewCount = order?.productReviews?.length ?? 0;
+  const reviewedProductIds = useMemo(
+    () =>
+      new Set(
+        (order?.productReviews ?? [])
+          .map(r => r.productId)
+          .filter((id): id is number => typeof id === 'number'),
+      ),
+    [order?.productReviews],
+  );
+  const reviewableProductCount = useMemo(() => {
+    const list = order?.saleItems ?? order?.items ?? [];
+    const ids = new Set(
+      list
+        .map(it => it.productId)
+        .filter((id): id is number => typeof id === 'number'),
+    );
+    return ids.size;
+  }, [order?.saleItems, order?.items]);
+  const hasAnyReview = reviewCount > 0;
+  const allReviewed =
+    hasAnyReview &&
+    reviewableProductCount > 0 &&
+    Array.from(reviewedProductIds).length >= reviewableProductCount;
+  // Single button label that adapts:
+  //   • no reviews yet  → "Write a Review"
+  //   • all items reviewed → "View Review"
+  //   • partially reviewed → "View / Add Reviews"
+  const reviewButtonLabel = !hasAnyReview
+    ? 'Write a Review'
+    : allReviewed
+    ? 'View Review'
+    : 'View / Add Reviews';
+
   if (isLoading || !order) return <LoadingScreen />;
 
   // Backend field names differ from the older mobile assumptions; resolve
@@ -264,11 +301,18 @@ export const OrderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
         <View style={styles.actions}>
           {canReview ? (
             <Button
-              title="Write a Review"
+              title={reviewButtonLabel}
               onPress={() => navigation.navigate('WriteReview', { orderId })}
               variant="primary"
               fullWidth
               size="lg"
+              leftIcon={
+                hasAnyReview ? (
+                  <Icon name="eye" size={16} color={colors.white} />
+                ) : (
+                  <Icon name="edit-3" size={16} color={colors.white} />
+                )
+              }
             />
           ) : null}
           {canViewInvoice ? (

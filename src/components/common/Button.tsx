@@ -75,7 +75,19 @@ export const Button: React.FC<Props> = ({
       <Text
         variant="button"
         color={fg}
-        style={{ fontSize: sz.fontSize, letterSpacing: 0.3 }}
+        // `numberOfLines={1}` + `adjustsFontSizeToFit` lets long labels
+        // (e.g. "View / Add Reviews") shrink to fit instead of getting
+        // visually clipped on smaller screens or when the user has bumped
+        // their system font scale.
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.8}
+        style={{
+          fontSize: sz.fontSize,
+          letterSpacing: 0.3,
+          textAlign: 'center',
+          flexShrink: 1,
+        }}
       >
         {title}
       </Text>

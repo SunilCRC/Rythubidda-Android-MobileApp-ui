@@ -99,16 +99,33 @@ export interface ProductQtyOption {
   default?: boolean;
 }
 
+/**
+ * Product / order review. Mirrors
+ * `com.pineblue.ai.commerce.model.product.ProductReview` on the backend.
+ * Used in two contexts:
+ *  1. Reviews shown on a Product page (`comment`/`message` are aliases there).
+ *  2. Orders LIST endpoint attaches an array of these per order via
+ *     `setProductReviews(...)` so the mobile knows what was already reviewed.
+ */
 export interface ProductReview {
   id?: number;
   reviewId?: number;
+  productId?: number;
+  orderId?: number;
+  productName?: string;
   customerId?: number;
   customerName?: string;
-  rating: number;
+  rating?: number;
   title?: string;
+  /** Backend field name on the JSON payload. */
+  review?: string;
+  /** Aliases used by the product detail screen. */
   comment?: string;
   message?: string;
+  /** Moderation status: -1 pending, 0 rejected, 1 accepted. */
+  status?: number;
   createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface Product {
@@ -214,7 +231,16 @@ export interface SaleOrderItem {
   qtyOptionLabel?: string;
   reviewed?: boolean;
   rating?: number;
+  /**
+   * The backend's `viewSubmitReviews` endpoint attaches this field per
+   * line item — `null` means the user hasn't reviewed this product yet,
+   * a populated object means they have. The mobile WriteReviewScreen
+   * uses this directly (mirrors what the web Orders.tsx does) instead of
+   * trying to cross-reference a separate reviews array.
+   */
+  productReview?: ProductReview | null;
 }
+
 
 export interface SaleOrder {
   entityId?: number;
@@ -247,6 +273,9 @@ export interface SaleOrder {
   // Backend Java field is `saleItems` — kept as an alternative to `items`.
   saleItems?: SaleOrderItem[];
   items?: SaleOrderItem[];
+  // Reviews the customer has already submitted for items on this order.
+  // Populated by the orders LIST endpoint (one row per reviewed product).
+  productReviews?: ProductReview[];
   status?: string;
   paymentMethod?: string;
   paymentStatus?: string;
@@ -310,12 +339,23 @@ export interface RazorpayOrderConfig {
   customer_phone?: string;
 }
 
-export interface ReviewSubmission {
-  productId: number;
-  orderId: number;
-  rating: number;
-  title?: string;
+/**
+ * Wire shape expected by the backend's `POST /api/v1/shop/submitReviews`.
+ * - `saleOrderItemId` matches `SaleOrderItem.id` (NOT `productId` — the
+ *   backend looks up the product internally from the sale-item record).
+ * - `rating` is sent as a STRING (the controller calls `Integer.parseInt`).
+ * - `headline` is the optional title field name on the backend DTO.
+ */
+export interface ReviewItem {
+  saleOrderItemId: number;
+  rating: string;
+  headline?: string;
   message?: string;
+}
+
+export interface ReviewSubmission {
+  orderId: number;
+  reviews: ReviewItem[];
 }
 
 export type PaymentMethod = 'RAZORPAY' | 'PAY_AFTER_DELIVERY' | 'COD';
