@@ -52,7 +52,14 @@ export function pluralize(count: number, singular: string, plural?: string): str
   return count === 1 ? singular : plural || `${singular}s`;
 }
 
-export function formatOrderNumber(order: { orderId?: string | number; entityId?: number }): string {
+export function formatOrderNumber(order: {
+  incrementId?: string;
+  orderId?: string | number;
+  entityId?: number;
+}): string {
+  // Backend exposes the human-readable number on `incrementId`. Fall back to
+  // `orderId` / `entityId` for older payloads and the cart-side `cartId` flow.
+  if (order.incrementId) return `#${order.incrementId}`;
   if (order.orderId) return `#${order.orderId}`;
   if (order.entityId) return `#${order.entityId}`;
   return '';

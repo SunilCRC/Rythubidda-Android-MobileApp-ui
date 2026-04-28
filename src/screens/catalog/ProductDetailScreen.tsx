@@ -1,15 +1,19 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Dimensions,
   FlatList,
   NativeScrollEvent,
   NativeSyntheticEvent,
+  Platform,
   Pressable,
   ScrollView,
+  StatusBar,
   StyleSheet,
   View,
   ViewToken,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Feather';
 import FastImage from 'react-native-fast-image';
 import { useQuery } from '@tanstack/react-query';
@@ -56,6 +60,27 @@ export const ProductDetailScreen: React.FC<Props> = ({ route, navigation }) => {
   const updateQty = useCartStore(s => s.updateQty);
   const removeItem = useCartStore(s => s.removeItem);
   const requireAuth = useRequireAuth();
+  const insets = useSafeAreaInsets();
+
+  // The hero tint is light (#FDF4EC), so dark status-bar icons read best.
+  // We force this only while this screen is focused to avoid affecting
+  // other screens.
+  useFocusEffect(
+    useCallback(() => {
+      StatusBar.setBarStyle('dark-content', true);
+      if (Platform.OS === 'android') {
+        StatusBar.setBackgroundColor('transparent', true);
+        StatusBar.setTranslucent(true);
+      }
+      return () => {
+        if (Platform.OS === 'android') {
+          StatusBar.setTranslucent(false);
+          StatusBar.setBackgroundColor(colors.background, true);
+        }
+        StatusBar.setBarStyle('dark-content', true);
+      };
+    }, []),
+  );
 
   const [selectedOptionId, setSelectedOptionId] = useState<
     string | number | undefined
@@ -202,7 +227,7 @@ export const ProductDetailScreen: React.FC<Props> = ({ route, navigation }) => {
         showsVerticalScrollIndicator={false}
       >
         {/* ===== Hero: carousel with floating chrome ===== */}
-        <View style={styles.hero}>
+        <View style={[styles.hero, { paddingTop: insets.top }]}>
           <FlatList
             data={images}
             horizontal
@@ -227,8 +252,8 @@ export const ProductDetailScreen: React.FC<Props> = ({ route, navigation }) => {
             )}
           />
 
-          {/* Floating back + wishlist */}
-          <View style={styles.floatingTop}>
+          {/* Floating back + wishlist — sits below the status bar */}
+          <View style={[styles.floatingTop, { top: insets.top + spacing.sm }]}>
             <Pressable
               onPress={() => navigation.goBack()}
               style={styles.iconBubble}
@@ -266,7 +291,12 @@ export const ProductDetailScreen: React.FC<Props> = ({ route, navigation }) => {
 
           {/* Discount pill */}
           {discountPercent ? (
-            <View style={styles.heroDiscount}>
+            <View
+              style={[
+                styles.heroDiscount,
+                { top: insets.top + spacing.sm + 56 },
+              ]}
+            >
               <Text variant="caption" weight="800" color={colors.white}>
                 {discountPercent}% OFF
               </Text>
@@ -355,42 +385,59 @@ export const ProductDetailScreen: React.FC<Props> = ({ route, navigation }) => {
             )}
           </View>
 
-          {/* Price row */}
+          {/* Price row — single inline row: ₹X  ~~₹Y~~  N% OFF  /  per unit */}
           <View style={styles.priceRow}>
-            <Text variant="h2" weight="800" color={colors.textPrimary}>
+            <Text
+              variant="h2"
+              weight="800"
+              color={colors.primary}
+              numberOfLines={1}
+            >
               {formatINR(effectivePrice)}
             </Text>
             {hasDiscount ? (
+              <Text
+                variant="bodyBold"
+                weight="600"
+                color={colors.textTertiary}
+                style={styles.mrp}
+                numberOfLines={1}
+              >
+                {formatINR(effectiveMrp!)}
+              </Text>
+            ) : null}
+            {hasDiscount ? (
+              <Text
+                variant="bodyBold"
+                weight="800"
+                color={colors.success}
+                style={styles.discountText}
+                numberOfLines={1}
+              >
+                {discountPercent}% OFF
+              </Text>
+            ) : null}
+            {unit ? (
               <>
                 <Text
-                  variant="bodyBold"
-                  weight="600"
+                  variant="bodySmall"
+                  weight="700"
                   color={colors.textTertiary}
-                  style={styles.mrp}
+                  style={styles.priceSep}
                 >
-                  {formatINR(effectiveMrp!)}
+                  /
                 </Text>
                 <Text
-                  variant="bodyBold"
-                  weight="800"
-                  color={colors.success}
-                  style={{ marginLeft: spacing.sm }}
+                  variant="bodySmall"
+                  weight="600"
+                  color={colors.textSecondary}
+                  numberOfLines={1}
                 >
-                  {discountPercent}% off
+                  per {unit}
                 </Text>
               </>
             ) : null}
           </View>
-          {unit ? (
-            <Text
-              variant="bodySmall"
-              weight="600"
-              color={colors.textSecondary}
-              style={{ marginTop: 2 }}
-            >
-              per {unit}
-            </Text>
-          ) : null}
         </View>
 
         {/* ===== Variant pills ===== */}
@@ -418,14 +465,17 @@ export const ProductDetailScreen: React.FC<Props> = ({ route, navigation }) => {
                   <Pressable
                     key={`opt-${id}`}
                     onPress={() => {
+                      if (outOfStock) return;
                       setSelectedOptionId(id);
                       haptics.tap();
                     }}
+                    disabled={outOfStock}
                     style={[
                       styles.variantPill,
                       selected
                         ? { backgroundColor: colors.primary, borderColor: colors.primary }
                         : { backgroundColor: colors.surface, borderColor: colors.primary },
+                      outOfStock && styles.variantPillDisabled,
                     ]}
                   >
                     <Text
@@ -607,16 +657,22 @@ export const ProductDetailScreen: React.FC<Props> = ({ route, navigation }) => {
       {/* ===== Sticky bottom CTA ===== */}
       <StickyBottomBar>
         <View style={styles.stickyInner}>
-          <View style={{ flex: 1 }}>
-            <Text variant="caption" weight="600" color={colors.textSecondary}>
+          <View style={styles.stickyPriceCol}>
+            <Text variant="caption" weight="700" color={colors.textTertiary}>
               {cartQty > 0 ? 'Total' : 'Price'}
             </Text>
-            <Text variant="h5" weight="800" color={colors.textPrimary}>
+            <Text
+              variant="h4"
+              weight="800"
+              color={colors.textPrimary}
+              numberOfLines={1}
+              style={{ marginTop: 2 }}
+            >
               {formatINR(totalPrice)}
             </Text>
           </View>
           {cartQty > 0 ? (
-            <View style={{ flex: 1.2 }}>
+            <View style={styles.stickyCtaCol}>
               <QuantityStepper
                 qty={cartQty}
                 onIncrement={handleIncrement}
@@ -630,13 +686,17 @@ export const ProductDetailScreen: React.FC<Props> = ({ route, navigation }) => {
             </View>
           ) : (
             <Button
-              title="Add to Cart"
+              title={outOfStock ? 'Out of Stock' : 'Add to Cart'}
               onPress={handleAddToCart}
               loading={adding}
               disabled={outOfStock}
               size="lg"
-              leftIcon={<Icon name="shopping-cart" size={16} color={colors.white} />}
-              style={{ flex: 1.2 }}
+              leftIcon={
+                outOfStock ? undefined : (
+                  <Icon name="shopping-cart" size={16} color={colors.white} />
+                )
+              }
+              style={styles.stickyCtaCol}
             />
           )}
         </View>
@@ -661,7 +721,7 @@ const styles = StyleSheet.create({
   },
   floatingTop: {
     position: 'absolute',
-    top: spacing.xl,
+    // `top` is provided dynamically via safe-area inset to avoid status-bar overlap.
     left: spacing.base,
     right: spacing.base,
     flexDirection: 'row',
@@ -679,8 +739,7 @@ const styles = StyleSheet.create({
   },
   heroDiscount: {
     position: 'absolute',
-    // Sit below the floating chrome on the right so nothing overlaps.
-    top: spacing.xl + 56,
+    // `top` provided dynamically — sits below the floating chrome.
     right: spacing.base,
     backgroundColor: colors.error,
     paddingHorizontal: spacing.md,
@@ -735,13 +794,15 @@ const styles = StyleSheet.create({
   priceRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
-    marginTop: spacing.md,
     flexWrap: 'wrap',
+    marginTop: spacing.md,
+    columnGap: spacing.sm,
   },
   mrp: {
-    marginLeft: spacing.sm,
     textDecorationLine: 'line-through',
   },
+  discountText: {},
+  priceSep: { marginHorizontal: 2 },
   section: {
     paddingHorizontal: spacing.base,
     paddingTop: spacing.lg,
@@ -754,6 +815,9 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     borderWidth: 1.5,
     marginRight: spacing.sm,
+  },
+  variantPillDisabled: {
+    opacity: 0.4,
   },
   highlightsRow: {
     flexDirection: 'row',
@@ -780,6 +844,8 @@ const styles = StyleSheet.create({
   stickyInner: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: spacing.base,
   },
+  stickyPriceCol: { flex: 1, justifyContent: 'center' },
+  stickyCtaCol: { flex: 1.4 },
 });

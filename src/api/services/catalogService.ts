@@ -64,17 +64,35 @@ export const catalogService = {
   getActiveBanners: () => apiGet<Banner[]>(ENDPOINTS.BANNERS_ACTIVE),
 
   validatePincode: async (pincode: string): Promise<PincodeValidation> => {
+    // Backend (ShopController#validatePincode) — `/api/v1/shop/pincode/validate?pincode=<6-digit>`
+    // returns the envelope `{success, message, data: { valid: boolean, area, shippingCost, ... }}`.
+    // After the axios client unwraps `data`, the payload here looks like:
+    //   { valid: true, area: '…', shippingCost: 50, deliveryCostPrice101To200: …, … }
+    // — i.e. the serviceability flag lives in `valid`, NOT `isDeliverable` / `deliverable` / `available`.
+    // The web checkout (CheckoutService.validatePincode) reads exactly that field, so we mirror it.
     const raw = await apiGet<any>(ENDPOINTS.PINCODE_VALIDATE, {
-      params: { pincode },
+      params: { pincode: String(pincode).trim() },
     });
-    // Backend might return `{isDeliverable: bool}` or `{available: bool}`
     if (raw && typeof raw === 'object') {
+      // Primary contract — what the backend currently returns.
+      if ('valid' in raw) {
+        return {
+          isDeliverable: !!raw.valid,
+          zipCode: raw.zipCode ?? raw.pincode,
+        };
+      }
+      // Defensive fallbacks — only used if the contract ever changes.
       if ('isDeliverable' in raw) return raw as PincodeValidation;
       if ('available' in raw)
         return { isDeliverable: !!raw.available, zipCode: raw.pincode };
       if ('deliverable' in raw)
         return { isDeliverable: !!raw.deliverable, zipCode: raw.pincode };
     }
+    // Could not interpret the response — treat as "unknown" rather than
+    // "not serviceable" so the UI can choose its own copy. We still return
+    // false here, but the caller is expected to differentiate network
+    // errors (thrown) from a confirmed `false` (resolved). Network errors
+    // throw out of `apiGet` so they never reach this fallback.
     return { isDeliverable: false };
   },
 };

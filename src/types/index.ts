@@ -220,20 +220,42 @@ export interface SaleOrder {
   entityId?: number;
   orderId?: string | number;
   uuid?: string;
+  // Backend's `incrementId` (e.g. "100000123") — preferred display id when present.
+  incrementId?: string;
   customerId?: number;
   customerFirstName?: string;
   customerLastName?: string;
   customerEmail?: string;
   customerPhone?: string;
+  // Backend uses `subTotal` / `grandTotal` / `shippingAmount` (camelCase) and
+  // exposes pre-formatted display strings as `dspSubTotal` / `dspGrandTotal`.
+  // We also keep the older field names so any code that already reads them
+  // continues to work.
   subtotal?: number;
+  subTotal?: number;
+  dspSubTotal?: string;
   shippingCost?: number;
+  shippingAmount?: number;
+  dspShippingAmount?: string;
   tax?: number;
   orderTotal?: number;
+  grandTotal?: number;
+  dspGrandTotal?: string;
+  // Total number of line items — only field surfaced by the orders LIST endpoint.
+  // The detail endpoint additionally returns the `items` array.
+  totalItemCount?: number;
+  // Backend Java field is `saleItems` — kept as an alternative to `items`.
+  saleItems?: SaleOrderItem[];
   items?: SaleOrderItem[];
   status?: string;
   paymentMethod?: string;
   paymentStatus?: string;
   deliveryDate?: string;
+  // Backend populates the resolved address objects on `shippingAddress` /
+  // `billingAddress` (snapshot first, then DB lookup as fallback). The older
+  // `address` field is kept for legacy callers.
+  shippingAddress?: CustomerAddress;
+  billingAddress?: CustomerAddress;
   address?: CustomerAddress;
   createdAt?: string;
   updatedAt?: string;
@@ -249,8 +271,13 @@ export interface InvoiceInfo {
   shippingCost?: number;
   tax?: number;
   total?: number;
-  invoiceNumber?: string;
+  // Backend `/api/v1/shop/invoice/{orderId}` actually returns these fields
+  // (after the envelope is unwrapped): { order, invoiceNumber, orderId, orderDate, status }.
+  // Every numeric / address / item field lives under `order.*`.
+  invoiceNumber?: string | number;
+  orderDate?: string;
   invoiceDate?: string;
+  status?: string;
   paymentMethod?: string;
 }
 

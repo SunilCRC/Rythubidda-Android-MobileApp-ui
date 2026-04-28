@@ -85,30 +85,52 @@ export const OrdersScreen: React.FC = () => {
   );
 };
 
-const OrderCard: React.FC<{ order: SaleOrder; onPress: () => void }> = ({ order, onPress }) => (
-  <Card onPress={onPress}>
-    <View style={styles.headerRow}>
-      <Text variant="bodyBold" color={colors.textPrimary}>
-        Order {formatOrderNumber(order)}
+const OrderCard: React.FC<{ order: SaleOrder; onPress: () => void }> = ({ order, onPress }) => {
+  // Backend `/api/v1/shop/orders` returns `SaleOrder` rows with these fields,
+  // not the names the mobile previously assumed:
+  //   • items count → `totalItemCount` (the list endpoint doesn't include the
+  //     full `items` array — that's only returned by the detail endpoint)
+  //   • total      → `grandTotal` (raw double) or `dspGrandTotal` (preformatted string).
+  // We fall back through every plausible alias so older / newer responses both work.
+  const itemCount =
+    order.totalItemCount ??
+    (Array.isArray(order.items) ? order.items.length : 0) ??
+    0;
+  const total =
+    order.grandTotal ??
+    order.orderTotal ??
+    (order.dspGrandTotal ? Number(order.dspGrandTotal) : undefined);
+
+  return (
+    <Card onPress={onPress}>
+      <View style={styles.headerRow}>
+        <Text variant="bodyBold" color={colors.textPrimary}>
+          Order {formatOrderNumber(order)}
+        </Text>
+        <Badge
+          label={(order.status || 'PENDING').toUpperCase()}
+          variant={badgeVariant(order.status)}
+        />
+      </View>
+      <Text variant="caption" color={colors.textTertiary} style={{ marginTop: 2 }}>
+        Placed on {formatDate(order.createdAt)}
       </Text>
-      <Badge label={(order.status || 'PENDING').toUpperCase()} variant={badgeVariant(order.status)} />
-    </View>
-    <Text variant="caption" color={colors.textTertiary} style={{ marginTop: 2 }}>
-      Placed on {formatDate(order.createdAt)}
-    </Text>
-    <View style={styles.metaRow}>
-      <View style={styles.metaItem}>
-        <Icon name="package" size={14} color={colors.textSecondary} />
-        <Text variant="bodySmall" color={colors.textSecondary} style={{ marginLeft: 4 }}>
-          {order.items?.length || 0} items
+      <View style={styles.metaRow}>
+        <View style={styles.metaItem}>
+          <Icon name="package" size={14} color={colors.textSecondary} />
+          <Text variant="bodySmall" color={colors.textSecondary} style={{ marginLeft: 4 }}>
+            {itemCount} {itemCount === 1 ? 'item' : 'items'}
+          </Text>
+        </View>
+        <Text variant="bodyBold" color={colors.primaryDark}>
+          {order.dspGrandTotal && !Number.isFinite(total)
+            ? `₹${order.dspGrandTotal}`
+            : formatINR(total)}
         </Text>
       </View>
-      <Text variant="bodyBold" color={colors.primaryDark}>
-        {formatINR(order.orderTotal)}
-      </Text>
-    </View>
-  </Card>
-);
+    </Card>
+  );
+};
 
 function badgeVariant(status?: string): 'success' | 'warning' | 'error' | 'neutral' | 'primary' {
   switch ((status || '').toUpperCase()) {

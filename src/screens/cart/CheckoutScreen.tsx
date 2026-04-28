@@ -124,11 +124,20 @@ export const CheckoutScreen: React.FC = () => {
     }
     setProcessing(true);
     try {
-      // Link address to cart + review
-      await cartService.reviewOrder({
-        cartId: cart.cartId!,
-        addressId,
-      });
+      // Mirror the web's place-order sequence:
+      //   1. updateCartAddress  → persists customerAddressId on the cart row
+      //   2. calculateShipping  → persists zipCode + shippingCost on the cart
+      // We deliberately do NOT call /cart/review-order here. That backend
+      // endpoint requires `shippingCode` AND `shippingName` to already be set
+      // on the cart (see ShoppingCartController#reviewOrder), and our
+      // calculateShipping flow doesn't populate those columns. Calling it
+      // therefore returns 400 "Shipping information is missing", which is
+      // exactly what we were seeing. The web Checkout (Rythubidda-UI/src/
+      // pages/Checkout.tsx) skips reviewOrder for the same reason.
+      await paymentService.updateCartAddress(cart.cartId!, addressId);
+      if (selectedAddress?.postcode) {
+        await cartService.calculateShipping(cart.cartId!, selectedAddress.postcode);
+      }
 
       if (payMethod === 'PAY_AFTER_DELIVERY') {
         await paymentService.createOrder(cart.cartId!, 'PAY_AFTER_DELIVERY');

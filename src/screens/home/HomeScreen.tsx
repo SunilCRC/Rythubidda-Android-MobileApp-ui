@@ -155,6 +155,28 @@ export const HomeScreen: React.FC = () => {
         ) : null}
       </View>
 
+      {/* Sticky search bar — lives outside the ScrollView so it stays anchored */}
+      <View style={styles.searchBarWrap}>
+        <Pressable
+          onPress={() => navigation.navigate('Search')}
+          style={styles.searchBar}
+          android_ripple={{ color: colors.pressed }}
+        >
+          <Icon name="search" size={18} color={colors.primary} />
+          <Text
+            variant="body"
+            weight="600"
+            color={colors.textSecondary}
+            style={{ flex: 1, marginLeft: spacing.sm }}
+            numberOfLines={1}
+          >
+            Search for rice, jaggery, spices…
+          </Text>
+          <View style={styles.searchDivider} />
+          <Icon name="mic" size={16} color={colors.primary} />
+        </Pressable>
+      </View>
+
       <ScrollView
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
@@ -167,24 +189,6 @@ export const HomeScreen: React.FC = () => {
           />
         }
       >
-        {/* Prominent search bar */}
-        <Pressable
-          onPress={() => navigation.navigate('Search')}
-          style={styles.searchBar}
-          android_ripple={{ color: colors.pressed }}
-        >
-          <Icon name="search" size={18} color={colors.textTertiary} />
-          <Text
-            variant="body"
-            color={colors.textTertiary}
-            style={{ flex: 1, marginLeft: spacing.sm }}
-          >
-            Search for rice, jaggery, spices…
-          </Text>
-          <View style={styles.searchDivider} />
-          <Icon name="mic" size={16} color={colors.primary} />
-        </Pressable>
-
         {/* Hero */}
         {gallery.isLoading ? (
           <Skeleton
@@ -481,18 +485,26 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
   },
   scroll: { paddingBottom: spacing.xl },
+  // Sticky wrapper — solid surface, soft separation from list below.
+  searchBarWrap: {
+    backgroundColor: colors.background,
+    paddingHorizontal: spacing.base,
+    paddingTop: spacing.xs,
+    paddingBottom: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.divider,
+    ...shadows.sm,
+    zIndex: 5,
+  },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginHorizontal: spacing.base,
-    marginTop: spacing.xs,
     paddingHorizontal: spacing.base,
     paddingVertical: 12,
     borderRadius: radius.full,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
-    ...shadows.sm,
   },
   searchDivider: {
     width: 1,
