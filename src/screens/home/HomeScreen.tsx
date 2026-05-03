@@ -15,6 +15,7 @@ import { useNavigation } from '@react-navigation/native';
 import { catalogService } from '../../api/services';
 import { Skeleton, Text } from '../../components/common';
 import { Container } from '../../components/layout/Container';
+import { DeliverToPill } from '../../components/DeliverToPill';
 import { HeroCarousel } from '../../components/HeroCarousel';
 import { ProductCard } from '../../components/ProductCard';
 import { colors } from '../../theme/colors';
@@ -153,6 +154,12 @@ export const HomeScreen: React.FC = () => {
             </LinearGradient>
           </Pressable>
         ) : null}
+      </View>
+
+      {/* Deliver-to pill — Zepto/Swiggy/Blinkit pattern. Always visible
+          so users see their delivery pincode without digging into cart. */}
+      <View style={styles.deliverToWrap}>
+        <DeliverToPill />
       </View>
 
       {/* Sticky search bar — lives outside the ScrollView so it stays anchored */}
@@ -483,6 +490,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: spacing.base,
     paddingVertical: 7,
+  },
+  deliverToWrap: {
+    paddingHorizontal: spacing.base,
+    paddingBottom: spacing.sm,
+    backgroundColor: colors.background,
+    flexDirection: 'row',
   },
   scroll: { paddingBottom: spacing.xl },
   // Sticky wrapper — solid surface, soft separation from list below.

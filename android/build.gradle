@@ -6,6 +6,23 @@ buildscript {
         targetSdkVersion = 36
         ndkVersion = "27.1.12297006"
         kotlinVersion = "2.1.20"
+
+        // ── Google Play Services version pinning ──────────────────────────
+        // Why: `react-native-geolocation-service` and `react-native-maps`
+        // both read these `ext` properties at configure-time to decide
+        // which Play Services to compile against. If left unset, libraries
+        // fall back to whatever they were published against — which can be
+        // years old. On modern emulators, that mismatch surfaces at runtime
+        // as `IncompatibleClassChangeError: Found interface
+        // com.google.android.gms.location.FusedLocationProviderClient,
+        // but class was expected` — because Google flipped the type from
+        // class → interface in newer Play Services releases.
+        //
+        // Pinning both to current stable (21.3.x for Location, 18.2.x for
+        // Maps) forces the libraries to compile against the same APIs the
+        // emulator's Play Services provides, eliminating the mismatch.
+        playServicesLocationVersion = "21.3.0"
+        playServicesVersion = "18.2.0"
     }
     repositories {
         google()
@@ -15,6 +32,18 @@ buildscript {
         classpath("com.android.tools.build:gradle")
         classpath("com.facebook.react:react-native-gradle-plugin")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin")
+    }
+}
+
+// Belt-and-braces: also force-resolve play-services-location across the
+// entire dependency graph. Without this, a transitive dep can pull in an
+// older version that wins the resolution and re-introduces the crash.
+allprojects {
+    configurations.all {
+        resolutionStrategy {
+            force "com.google.android.gms:play-services-location:21.3.0"
+            force "com.google.android.gms:play-services-base:18.5.0"
+        }
     }
 }
 

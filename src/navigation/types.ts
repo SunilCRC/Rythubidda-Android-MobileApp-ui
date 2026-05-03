@@ -60,10 +60,21 @@ export type MainTabParamList = {
   ProfileTab: NavigatorScreenParams<ProfileStackParamList>;
 };
 
+export type LocationStackParamList = {
+  PermissionPrimer: undefined;
+  /**
+   * `autoDetect` is set to `true` when the picker is opened immediately
+   * after the user grants location permission from the primer — the
+   * picker fires a GPS detection automatically on mount.
+   */
+  LocationPicker: { autoDetect?: boolean } | undefined;
+};
+
 export type RootStackParamList = {
   Splash: undefined;
   Main: NavigatorScreenParams<MainTabParamList>;
   Auth: NavigatorScreenParams<AuthStackParamList>;
+  Location: NavigatorScreenParams<LocationStackParamList>;
 };
 
 declare global {

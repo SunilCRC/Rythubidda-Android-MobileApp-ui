@@ -46,6 +46,13 @@ export interface CustomerAddress {
   postcode: string;
   telephone: string;
   email?: string;
+  /**
+   * WGS84 coordinates resolved by the mobile app's GPS detection
+   * (Google Geocoding). Optional — addresses created from the web
+   * frontend or before this feature shipped won't have them.
+   */
+  latitude?: number;
+  longitude?: number;
   createdAt?: string;
   updatedAt?: string;
 }

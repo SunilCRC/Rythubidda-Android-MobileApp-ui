@@ -6,6 +6,7 @@ import {
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useAuthStore } from '../store';
 import { AuthStack } from './AuthStack';
+import { LocationStack } from './LocationStack';
 import { MainTabs } from './MainTabs';
 import { SplashScreen } from '../screens/splash/SplashScreen';
 import { setOnUnauthorized } from '../api/client';
@@ -55,6 +56,14 @@ export const RootNavigator: React.FC = () => {
         <Stack.Screen
           name="Auth"
           component={AuthStack}
+          options={{
+            presentation: 'modal',
+            animation: 'slide_from_bottom',
+          }}
+        />
+        <Stack.Screen
+          name="Location"
+          component={LocationStack}
           options={{
             presentation: 'modal',
             animation: 'slide_from_bottom',

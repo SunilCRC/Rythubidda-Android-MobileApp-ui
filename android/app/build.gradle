@@ -93,6 +93,15 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0"
+
+        // Inject GOOGLE_MAPS_API_KEY from .env (already loaded by dotenv.gradle
+        // above) into the AndroidManifest as ${GOOGLE_MAPS_API_KEY}, so the
+        // key never has to be hard-coded in source. If .env is missing the
+        // key, build still succeeds — Maps will fail at runtime with a clear
+        // "Authorization failure" error pointing the developer to .env.
+        manifestPlaceholders = [
+            GOOGLE_MAPS_API_KEY: (project.env.get("GOOGLE_MAPS_API_KEY") ?: "")
+        ]
     }
     signingConfigs {
         debug {

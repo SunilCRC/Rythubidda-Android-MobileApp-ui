@@ -5,7 +5,7 @@ import { useNavigation } from '@react-navigation/native';
 import { Text } from '../../components/common';
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
-import { useAuthStore, useCartStore } from '../../store';
+import { useAuthStore, useCartStore, useLocationStore } from '../../store';
 
 const SPLASH_DURATION_MS = 2500;
 
@@ -24,6 +24,7 @@ export const SplashScreen: React.FC = () => {
   const hydrate = useAuthStore(s => s.hydrate);
   const status = useAuthStore(s => s.status);
   const hydrateCart = useCartStore(s => s.hydrate);
+  const hydrateLocation = useLocationStore(s => s.hydrate);
 
   useEffect(() => {
     // Animate logo in
@@ -48,10 +49,11 @@ export const SplashScreen: React.FC = () => {
       }),
     ]).start();
 
-    // Kick off auth + cart hydration in parallel
+    // Kick off auth + cart + location hydration in parallel
     hydrate();
     hydrateCart();
-  }, [hydrate, hydrateCart, logoOpacity, logoScale, taglineOpacity]);
+    hydrateLocation();
+  }, [hydrate, hydrateCart, hydrateLocation, logoOpacity, logoScale, taglineOpacity]);
 
   useEffect(() => {
     // Advance once the minimum splash duration has elapsed AND auth has resolved

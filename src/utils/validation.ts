@@ -75,6 +75,11 @@ export const addressSchema = z.object({
   postcode: pincodeSchema,
   telephone: phoneSchema,
   email: z.string().email('Enter a valid email').optional().or(z.literal('')),
+  // GPS coordinates — optional. Set by the "Use current location" button
+  // on the address form. Sent to the backend so the address row stores
+  // its lat/lng for future on-map features.
+  latitude: z.number().optional(),
+  longitude: z.number().optional(),
 });
 
 export const profileSchema = z.object({

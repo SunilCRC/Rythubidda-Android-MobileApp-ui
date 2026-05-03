@@ -3,6 +3,15 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.VIBRATE" />
 
+    <!-- Location — used by the GPS picker on the home screen and the
+         "Use current location" button on the address form.
+         FINE  = lat/lng accurate to a few metres (GPS chip).
+         COARSE = ~100 m (cell-tower / WiFi).
+         We request both; modern Android grants approximate by default,
+         and can upgrade to precise after the user confirms. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
     <application
       android:name=".MainApplication"
       android:label="@string/app_name"
@@ -12,6 +21,20 @@
       android:theme="@style/AppTheme"
       android:usesCleartextTraffic="${usesCleartextTraffic}"
       android:supportsRtl="true">
+
+      <!-- Google Maps API key. Value is substituted at build time from .env
+           via manifestPlaceholders (see android/app/build.gradle). The key
+           must be restricted in Google Cloud Console to:
+              • applicationId  : com.rythubiddamobile
+              • SHA-1 fingerprint: debug + release keystore
+              • API restrictions : Geocoding API, Places API (New),
+                                   Maps SDK for Android — and ONLY these.
+           If you ever need to bump the key, update .env and rebuild.
+           Never commit a real key — .env is gitignored. -->
+      <meta-data
+          android:name="com.google.android.geo.API_KEY"
+          android:value="${GOOGLE_MAPS_API_KEY}" />
+
       <activity
         android:name=".MainActivity"
         android:label="@string/app_name"
