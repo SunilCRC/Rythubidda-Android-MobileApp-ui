@@ -65,21 +65,20 @@ export const changePasswordSchema = z
     message: 'Passwords do not match',
   });
 
+/**
+ * Address form — only fields the user actually TYPES are validated here.
+ * city / state / postcode / latitude / longitude are derived from the map
+ * + Google reverse-geocode and don't need user-facing validation. They're
+ * still sent to the backend on save (alongside this schema's output).
+ */
 export const addressSchema = z.object({
   firstname: z.string().trim().min(2, 'Required'),
   lastname: z.string().trim().min(1, 'Required'),
-  address1: z.string().trim().min(5, 'Street address is required'),
+  // House / Flat / Plot number — short string is fine; landmark is below.
+  address1: z.string().trim().min(1, 'Required'),
+  // Landmark — fully optional.
   address2: z.string().optional(),
-  city: z.string().trim().min(2, 'City is required'),
-  state: z.string().trim().min(2, 'State is required'),
-  postcode: pincodeSchema,
   telephone: phoneSchema,
-  email: z.string().email('Enter a valid email').optional().or(z.literal('')),
-  // GPS coordinates — optional. Set by the "Use current location" button
-  // on the address form. Sent to the backend so the address row stores
-  // its lat/lng for future on-map features.
-  latitude: z.number().optional(),
-  longitude: z.number().optional(),
 });
 
 export const profileSchema = z.object({

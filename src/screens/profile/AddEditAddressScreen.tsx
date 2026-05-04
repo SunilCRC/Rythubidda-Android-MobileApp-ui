@@ -1,18 +1,26 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
+  TextInput,
   View,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { Button, Input, LoadingScreen, Text } from '../../components/common';
+import {
+  Button,
+  Card,
+  Input,
+  LoadingScreen,
+  Text,
+} from '../../components/common';
 import { Container } from '../../components/layout/Container';
 import { ScreenHeader } from '../../components/layout/ScreenHeader';
 import { LocationMapPreview } from '../../components/LocationMapPreview';
@@ -26,29 +34,69 @@ import {
   requestLocationPermission,
 } from '../../utils/locationPermissions';
 import { getCurrentLocation } from '../../utils/geolocation';
-import { forwardGeocode, reverseGeocode } from '../../utils/googleGeocode';
+import { reverseGeocode, type ResolvedAddress } from '../../utils/googleGeocode';
+import {
+  autocomplete as gAutocomplete,
+  createSessionToken,
+  placeDetails,
+  type PlaceSuggestion,
+} from '../../utils/googlePlaces';
 import { haptics } from '../../utils/haptics';
 import { colors } from '../../theme/colors';
-import { radius, spacing } from '../../theme/spacing';
+import { radius, shadows, spacing } from '../../theme/spacing';
+import { fonts, fontSizes } from '../../theme/typography';
+import { SHIPPING_CONFIG } from '../../constants/shipping';
 import type { ProfileStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<ProfileStackParamList, 'AddEditAddress'>;
 
+const AUTOCOMPLETE_DEBOUNCE_MS = 300;
+
+/**
+ * Map-first address form — Zepto / Swiggy / Blinkit pattern.
+ *
+ *   ┌──────────────────────────┐
+ *   │  Map with draggable pin  │  ← drag to refine; auto-detects on mount
+ *   └──────────────────────────┘
+ *   🔍 Search address ...        ← Google Places autocomplete
+ *   ┌──────────────────────────┐
+ *   │ 📍 Detected location:    │
+ *   │ Kukatpally, Hyderabad,   │  ← city/state/pincode AUTO-FILLED
+ *   │ Telangana - 500072       │     not editable
+ *   └──────────────────────────┘
+ *   First name | Last name
+ *   Flat / House no
+ *   Landmark (optional)
+ *   Phone
+ *   [ Save address ]
+ */
 export const AddEditAddressScreen: React.FC<Props> = ({ route, navigation }) => {
   const addressId = route.params?.addressId;
   const isEdit = !!addressId;
   const user = useAuthStore(s => s.user);
   const setStoreLocation = useLocationStore(s => s.setLocation);
-  const [loading, setLoading] = useState(isEdit);
-  const [submitting, setSubmitting] = useState(false);
-  const [detectingLocation, setDetectingLocation] = useState(false);
-  const [pinCoords, setPinCoords] = useState<{ latitude: number; longitude: number } | null>(null);
 
+  // Map / location state
+  const [pinCoords, setPinCoords] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [resolved, setResolved] = useState<ResolvedAddress | null>(null);
+  const [resolving, setResolving] = useState(false);
+  const [initializing, setInitializing] = useState(true);
+
+  // Autocomplete state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
+  const [searching, setSearching] = useState(false);
+  const sessionTokenRef = useRef<string>(createSessionToken());
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [submitting, setSubmitting] = useState(false);
+
+  // Form — only the manual-input fields. city/state/pincode/lat/lng come
+  // from `resolved` + `pinCoords` and are merged into the payload at save.
   const {
     control,
     handleSubmit,
     reset,
-    setValue,
     formState: { errors },
   } = useForm<AddressInput>({
     resolver: zodResolver(addressSchema),
@@ -57,209 +105,247 @@ export const AddEditAddressScreen: React.FC<Props> = ({ route, navigation }) => 
       lastname: user?.lastname || user?.lastName || '',
       address1: '',
       address2: '',
-      city: '',
-      state: '',
-      postcode: '',
       telephone: user?.phone || '',
-      email: user?.email || '',
-      latitude: undefined,
-      longitude: undefined,
     },
   });
 
+  // ────────────────────────────────────────────────────────────────────
+  //  Init — edit mode loads existing row; create mode auto-detects GPS
+  // ────────────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!isEdit) return;
+    let cancelled = false;
     (async () => {
-      try {
-        const list = await addressService.list();
-        const found = list.find(a => a.customerAddressId === addressId);
-        if (found) {
-          reset({
-            firstname: found.firstname || '',
-            lastname: found.lastname || '',
-            address1: found.address1,
-            address2: found.address2 || '',
-            city: found.city,
-            state: found.state,
-            postcode: found.postcode,
-            telephone: found.telephone,
-            email: found.email || '',
-            latitude: found.latitude,
-            longitude: found.longitude,
-          });
-          if (
-            typeof found.latitude === 'number' &&
-            typeof found.longitude === 'number'
-          ) {
-            setPinCoords({
-              latitude: found.latitude,
-              longitude: found.longitude,
+      if (isEdit) {
+        try {
+          const list = await addressService.list();
+          const found = list.find(a => a.customerAddressId === addressId);
+          if (found && !cancelled) {
+            reset({
+              firstname: found.firstname || '',
+              lastname: found.lastname || '',
+              address1: found.address1 || '',
+              address2: found.address2 || '',
+              telephone: found.telephone || '',
             });
+            if (typeof found.latitude === 'number' && typeof found.longitude === 'number') {
+              setPinCoords({ latitude: found.latitude, longitude: found.longitude });
+              // Synthesise a ResolvedAddress from saved fields so the
+              // "Detected location" card has something to show immediately.
+              setResolved({
+                pincode: found.postcode,
+                city: found.city,
+                state: found.state,
+                area: undefined,
+                road: undefined,
+                formatted: `${found.address1}${found.address2 ? `, ${found.address2}` : ''}, ${found.city}, ${found.state} - ${found.postcode}`,
+                latitude: found.latitude,
+                longitude: found.longitude,
+              });
+            } else {
+              // Edit row with no coords — geocode them now
+              await detectFromGps(false);
+            }
           }
+        } finally {
+          if (!cancelled) setInitializing(false);
         }
-      } finally {
-        setLoading(false);
+      } else {
+        // Add mode — try GPS first, fall back to warehouse default
+        await detectFromGps(true);
+        if (!cancelled) setInitializing(false);
       }
     })();
-  }, [isEdit, addressId, reset]);
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEdit, addressId]);
 
-  /**
-   * "Use current location" — auto-fills address1/city/state/postcode from
-   * the device's GPS fix via Google Geocoding. Also captures lat/lng so
-   * they're sent to the backend on save (and the home pill updates
-   * immediately via the global location store).
-   */
-  const handleUseCurrentLocation = async () => {
-    if (detectingLocation) return;
-    setDetectingLocation(true);
+  // ────────────────────────────────────────────────────────────────────
+  //  GPS detection
+  // ────────────────────────────────────────────────────────────────────
+  const detectFromGps = async (silent: boolean) => {
     try {
       let status = await checkLocationPermission();
       if (status === 'denied') {
         status = await requestLocationPermission();
       }
       if (status === 'blocked') {
-        Alert.alert(
-          'Location blocked',
-          "We can't access your location. Open Settings to enable it, or fill in the address manually below.",
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Open Settings', onPress: () => openAppSettings() },
-          ],
-        );
-        return;
-      }
-      if (status === 'unavailable') {
-        showToast.info(
-          'GPS not available',
-          'Rebuild the app to enable detection. Fill the form manually for now.',
-        );
+        if (!silent) {
+          Alert.alert(
+            'Location blocked',
+            "We can't access your location. Open Settings to enable it, or search for your address.",
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Open Settings', onPress: () => openAppSettings() },
+            ],
+          );
+        }
+        // Fall back to warehouse so the map still has SOMETHING to show.
+        if (!pinCoords) {
+          setPinCoords({
+            latitude: SHIPPING_CONFIG.warehouseLat,
+            longitude: SHIPPING_CONFIG.warehouseLng,
+          });
+        }
         return;
       }
       if (status !== 'granted' && status !== 'limited') {
-        showToast.info(
-          'Location not granted',
-          'You can fill the form manually.',
-        );
+        if (!pinCoords) {
+          setPinCoords({
+            latitude: SHIPPING_CONFIG.warehouseLat,
+            longitude: SHIPPING_CONFIG.warehouseLng,
+          });
+        }
         return;
       }
 
       const gps = await getCurrentLocation({ highAccuracy: true });
       if (!gps.ok) {
-        const msg =
-          gps.error === 'timeout'
-            ? "Couldn't get a GPS fix. Make sure location is on and try again."
-            : "Couldn't get your location.";
-        showToast.error('Location error', msg);
+        if (!pinCoords) {
+          setPinCoords({
+            latitude: SHIPPING_CONFIG.warehouseLat,
+            longitude: SHIPPING_CONFIG.warehouseLng,
+          });
+        }
         return;
       }
-
       await applyCoordinates(gps.coords.latitude, gps.coords.longitude);
     } catch {
-      showToast.error('Could not detect location', 'Try again or enter manually.');
-    } finally {
-      setDetectingLocation(false);
+      if (!pinCoords) {
+        setPinCoords({
+          latitude: SHIPPING_CONFIG.warehouseLat,
+          longitude: SHIPPING_CONFIG.warehouseLng,
+        });
+      }
     }
   };
 
   /**
-   * Shared between initial GPS detect and pin-drag refinement: takes a
-   * lat/lng, runs Google reverse-geocode, and pre-fills the form fields.
+   * Set pin → reverse-geocode → update the "Detected location" card +
+   * mirror to the global delivery-location store (so the home pill
+   * updates immediately).
    */
   const applyCoordinates = async (lat: number, lng: number) => {
-    const geo = await reverseGeocode(lat, lng);
-    if (!geo.ok) {
-      if (geo.error === 'key_missing') {
-        showToast.error(
-          'API key not in build',
-          'Rebuild Android after setting GOOGLE_MAPS_API_KEY in .env.',
-        );
-      } else if (geo.error === 'key_rejected') {
-        showToast.error(
-          'Google rejected the key',
-          'Check Cloud Console: enable Geocoding API + match SHA-1.',
-        );
-      } else {
-        showToast.error(
-          "Couldn't read address",
-          'Try again, or fill the fields manually.',
-        );
+    setPinCoords({ latitude: lat, longitude: lng });
+    setResolving(true);
+    try {
+      const geo = await reverseGeocode(lat, lng);
+      if (!geo.ok) {
+        if (geo.error === 'key_missing' || geo.error === 'key_rejected') {
+          showToast.error(
+            'Maps key issue',
+            'Check Cloud Console: enable Geocoding API and verify SHA-1.',
+          );
+        }
+        return;
       }
-      return;
+      setResolved(geo.address);
+      // Push to global store too
+      await setStoreLocation({
+        pincode: geo.address.pincode,
+        city: geo.address.city,
+        state: geo.address.state,
+        area: geo.address.area,
+        road: geo.address.road,
+        formatted: geo.address.formatted,
+        latitude: geo.address.latitude,
+        longitude: geo.address.longitude,
+        source: 'gps',
+        capturedAt: new Date().toISOString(),
+      });
+      haptics.tap();
+    } finally {
+      setResolving(false);
     }
-    const a = geo.address;
-    const line1Parts = [a.road, a.area].filter(Boolean) as string[];
-    if (line1Parts.length > 0) {
-      setValue('address1', line1Parts.join(', '), { shouldValidate: true });
-    }
-    if (a.city) setValue('city', a.city, { shouldValidate: true });
-    if (a.state) setValue('state', a.state, { shouldValidate: true });
-    if (a.pincode) setValue('postcode', a.pincode, { shouldValidate: true });
-    setValue('latitude', a.latitude);
-    setValue('longitude', a.longitude);
-    setPinCoords({ latitude: a.latitude, longitude: a.longitude });
-
-    // Mirror to global delivery-location store so the home pill updates
-    // without requiring an extra trip through the picker.
-    await setStoreLocation({
-      pincode: a.pincode,
-      city: a.city,
-      state: a.state,
-      area: a.area,
-      road: a.road,
-      formatted: a.formatted,
-      latitude: a.latitude,
-      longitude: a.longitude,
-      source: 'gps',
-      capturedAt: new Date().toISOString(),
-    });
-
-    haptics.success();
-    showToast.success(
-      'Address pre-filled',
-      `${a.area ?? a.city ?? ''} ${a.pincode}`.trim(),
-    );
   };
 
+  // ────────────────────────────────────────────────────────────────────
+  //  Autocomplete (Google Places New)
+  // ────────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    const trimmed = searchQuery.trim();
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (trimmed.length < 3) {
+      setSuggestions([]);
+      setSearching(false);
+      return;
+    }
+    setSearching(true);
+    debounceRef.current = setTimeout(async () => {
+      const r = await gAutocomplete(trimmed, sessionTokenRef.current);
+      setSearching(false);
+      if (r.ok) setSuggestions(r.suggestions);
+      else setSuggestions([]);
+    }, AUTOCOMPLETE_DEBOUNCE_MS);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [searchQuery]);
+
+  const pickSuggestion = async (s: PlaceSuggestion) => {
+    setSearching(true);
+    try {
+      const r = await placeDetails(s.placeId, sessionTokenRef.current);
+      sessionTokenRef.current = createSessionToken(); // mint a fresh session
+      if (!r.ok || !r.details.pincode) {
+        showToast.error("Couldn't read that address", 'Try a different result or drag the pin.');
+        return;
+      }
+      const d = r.details;
+      setPinCoords({ latitude: d.latitude, longitude: d.longitude });
+      setResolved({
+        pincode: d.pincode!, // narrowed by the !r.details.pincode guard above
+        city: d.city,
+        state: d.state,
+        country: d.country,
+        area: d.area,
+        road: d.road,
+        formatted: d.formatted,
+        latitude: d.latitude,
+        longitude: d.longitude,
+      });
+      setSearchQuery('');
+      setSuggestions([]);
+      haptics.tap();
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  // ────────────────────────────────────────────────────────────────────
+  //  Save
+  // ────────────────────────────────────────────────────────────────────
   const onSubmit = async (data: AddressInput) => {
+    if (!resolved || !pinCoords) {
+      showToast.error(
+        'Pick your location',
+        'Use the map / search to set your delivery location.',
+      );
+      return;
+    }
+    if (!resolved.pincode || !resolved.city || !resolved.state) {
+      showToast.error(
+        'Address incomplete',
+        "We couldn't determine the pincode for this spot. Drag the pin closer to a road.",
+      );
+      return;
+    }
     setSubmitting(true);
     try {
-      // Auto-geocode if the user filled the form manually (no GPS) and we
-      // therefore don't have lat/lng yet. The backend uses these for
-      // distance-based shipping — without them, that address falls back to
-      // the legacy pincode pricing. Best-effort: if geocoding fails for
-      // any reason (rate limit, no internet) we still save the address.
-      let payload: AddressInput = data;
-      if (
-        typeof data.latitude !== 'number' ||
-        typeof data.longitude !== 'number'
-      ) {
-        const composite = [
-          data.address1,
-          data.address2,
-          data.city,
-          data.state,
-          data.postcode,
-          'India',
-        ]
-          .filter(Boolean)
-          .join(', ');
-        const geo = await forwardGeocode(composite);
-        if (geo.ok) {
-          payload = {
-            ...data,
-            latitude: geo.address.latitude,
-            longitude: geo.address.longitude,
-          };
-        }
-        // No toast on geocode failure — the save still works, just with
-        // legacy shipping pricing.
-      }
-
+      // Non-null assertions are safe — the early return above guards
+      // pincode/city/state. TypeScript doesn't carry the narrowing through
+      // the showToast/return path, so we re-assert here.
+      const payload = {
+        ...data,
+        city: resolved.city!,
+        state: resolved.state!,
+        postcode: resolved.pincode,
+        latitude: pinCoords.latitude,
+        longitude: pinCoords.longitude,
+      };
       if (isEdit) {
         await addressService.update({ ...payload, customerAddressId: addressId });
       } else {
         await addressService.save(payload);
       }
+      haptics.success();
       showToast.success(isEdit ? 'Address updated' : 'Address saved');
       navigation.goBack();
     } catch (e: any) {
@@ -269,10 +355,10 @@ export const AddEditAddressScreen: React.FC<Props> = ({ route, navigation }) => 
     }
   };
 
-  if (loading) return <LoadingScreen />;
+  if (initializing) return <LoadingScreen />;
 
   return (
-    <Container>
+    <Container edges={['top']}>
       <ScreenHeader title={isEdit ? 'Edit address' : 'Add address'} />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -282,54 +368,110 @@ export const AddEditAddressScreen: React.FC<Props> = ({ route, navigation }) => 
           contentContainerStyle={styles.scroll}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Use current location — auto-fills the form from a GPS fix */}
-          <Pressable
-            onPress={handleUseCurrentLocation}
-            disabled={detectingLocation}
-            style={({ pressed }) => [
-              styles.useLocationBtn,
-              pressed && { opacity: 0.9 },
-              detectingLocation && { opacity: 0.7 },
-            ]}
-            android_ripple={{ color: colors.pressed }}
-            accessibilityRole="button"
-            accessibilityLabel="Use current location to pre-fill address"
-          >
-            <View style={styles.useLocationIcon}>
-              <Icon name="navigation" size={16} color={colors.white} />
-            </View>
-            <View style={{ flex: 1, marginLeft: spacing.sm }}>
-              <Text variant="bodyBold" weight="700" color={colors.textPrimary}>
-                {detectingLocation ? 'Detecting…' : 'Use current location'}
-              </Text>
-              <Text
-                variant="caption"
-                weight="600"
-                color={colors.textSecondary}
-                style={{ marginTop: 1 }}
-              >
-                Auto-fill street, city, state and pincode from GPS.
-              </Text>
-            </View>
-            <Icon name="chevron-right" size={18} color={colors.textTertiary} />
-          </Pressable>
-
-          {/* Map preview — only after we have coordinates. Drag the pin to
-              refine the lat/lng + re-fetch the address. */}
+          {/* ── Map (always visible, full-width) ───────────────────────── */}
           {pinCoords ? (
             <LocationMapPreview
               latitude={pinCoords.latitude}
               longitude={pinCoords.longitude}
               draggable
-              onCoordinateChange={c => {
-                setPinCoords(c);
-                void applyCoordinates(c.latitude, c.longitude);
-              }}
-              style={{ marginBottom: spacing.lg }}
+              height={200}
+              onCoordinateChange={c => void applyCoordinates(c.latitude, c.longitude)}
+              style={{ marginBottom: spacing.sm }}
             />
           ) : null}
 
-          <View style={styles.row}>
+          {/* ── Search bar (Places autocomplete) ───────────────────────── */}
+          <View style={styles.searchBox}>
+            <Icon name="search" size={18} color={colors.primary} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search area, street, or landmark"
+              placeholderTextColor={colors.textTertiary}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              autoCorrect={false}
+              autoCapitalize="words"
+            />
+            {searching ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : searchQuery.length > 0 ? (
+              <Pressable onPress={() => { setSearchQuery(''); setSuggestions([]); }} hitSlop={8}>
+                <Icon name="x" size={16} color={colors.textTertiary} />
+              </Pressable>
+            ) : null}
+          </View>
+
+          {/* ── Autocomplete suggestions dropdown ──────────────────────── */}
+          {suggestions.length > 0 ? (
+            <Card style={styles.suggestionsCard} padded={false}>
+              {suggestions.map((s, i) => (
+                <Pressable
+                  key={s.placeId}
+                  onPress={() => pickSuggestion(s)}
+                  style={({ pressed }) => [
+                    styles.suggestion,
+                    i > 0 && styles.suggestionDivider,
+                    pressed && { opacity: 0.92 },
+                  ]}
+                  android_ripple={{ color: colors.pressed }}
+                >
+                  <Icon name="map-pin" size={16} color={colors.primary} />
+                  <View style={{ flex: 1, marginLeft: spacing.sm }}>
+                    <Text variant="bodyBold" weight="700" numberOfLines={1}>
+                      {s.primaryText}
+                    </Text>
+                    {s.secondaryText ? (
+                      <Text variant="caption" weight="500" color={colors.textSecondary} numberOfLines={1}>
+                        {s.secondaryText}
+                      </Text>
+                    ) : null}
+                  </View>
+                </Pressable>
+              ))}
+            </Card>
+          ) : null}
+
+          {/* ── Resolved-location card (auto-filled from map / search) ─── */}
+          {resolved ? (
+            <Card style={styles.resolvedCard}>
+              <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+                <Icon name="map-pin" size={16} color={colors.primary} style={{ marginTop: 2 }} />
+                <View style={{ flex: 1, marginLeft: spacing.sm }}>
+                  <Text variant="bodyBold" weight="700" color={colors.textPrimary}>
+                    Delivery to
+                  </Text>
+                  <Text
+                    variant="caption"
+                    weight="600"
+                    color={colors.textSecondary}
+                    style={{ marginTop: 2 }}
+                  >
+                    {resolved.formatted ??
+                      [resolved.area, resolved.city, resolved.state, resolved.pincode]
+                        .filter(Boolean)
+                        .join(', ')}
+                  </Text>
+                  {resolving ? (
+                    <Text variant="caption" color={colors.textTertiary} style={{ marginTop: 2 }}>
+                      Updating…
+                    </Text>
+                  ) : null}
+                </View>
+                <Pressable onPress={() => detectFromGps(false)} hitSlop={8} style={styles.refreshBtn}>
+                  <Icon name="navigation" size={16} color={colors.primary} />
+                </Pressable>
+              </View>
+            </Card>
+          ) : (
+            <Card style={[styles.resolvedCard, { backgroundColor: '#fef2f2' }]} elevated={false}>
+              <Text variant="caption" color={colors.error} weight="600">
+                Pick a location on the map or search to continue.
+              </Text>
+            </Card>
+          )}
+
+          {/* ── Manual inputs ──────────────────────────────────────────── */}
+          <View style={[styles.row, { marginTop: spacing.lg }]}>
             <Controller
               control={control}
               name="firstname"
@@ -363,8 +505,8 @@ export const AddEditAddressScreen: React.FC<Props> = ({ route, navigation }) => 
             name="address1"
             render={({ field: { onChange, value } }) => (
               <Input
-                label="Address line 1"
-                placeholder="House no, street"
+                label="Flat / House no. / Plot"
+                placeholder="e.g. Plot 42, Flat 3B"
                 value={value}
                 onChangeText={onChange}
                 error={errors.address1?.message}
@@ -376,97 +518,37 @@ export const AddEditAddressScreen: React.FC<Props> = ({ route, navigation }) => 
             name="address2"
             render={({ field: { onChange, value } }) => (
               <Input
-                label="Address line 2 (optional)"
-                placeholder="Landmark, area"
+                label="Landmark (optional)"
+                placeholder="e.g. Near temple"
                 value={value}
                 onChangeText={onChange}
                 error={errors.address2?.message}
               />
             )}
           />
-          <View style={styles.row}>
-            <Controller
-              control={control}
-              name="city"
-              render={({ field: { onChange, value } }) => (
-                <Input
-                  label="City"
-                  value={value}
-                  onChangeText={onChange}
-                  error={errors.city?.message}
-                  containerStyle={{ flex: 1 }}
-                />
-              )}
-            />
-            <View style={{ width: spacing.md }} />
-            <Controller
-              control={control}
-              name="state"
-              render={({ field: { onChange, value } }) => (
-                <Input
-                  label="State"
-                  value={value}
-                  onChangeText={onChange}
-                  error={errors.state?.message}
-                  containerStyle={{ flex: 1 }}
-                />
-              )}
-            />
-          </View>
-          <View style={styles.row}>
-            <Controller
-              control={control}
-              name="postcode"
-              render={({ field: { onChange, value } }) => (
-                <Input
-                  label="Pincode"
-                  keyboardType="number-pad"
-                  maxLength={6}
-                  value={value}
-                  onChangeText={onChange}
-                  error={errors.postcode?.message}
-                  containerStyle={{ flex: 1 }}
-                />
-              )}
-            />
-            <View style={{ width: spacing.md }} />
-            <Controller
-              control={control}
-              name="telephone"
-              render={({ field: { onChange, value } }) => (
-                <Input
-                  label="Phone"
-                  keyboardType="phone-pad"
-                  maxLength={10}
-                  value={value}
-                  onChangeText={onChange}
-                  error={errors.telephone?.message}
-                  containerStyle={{ flex: 1 }}
-                />
-              )}
-            />
-          </View>
           <Controller
             control={control}
-            name="email"
+            name="telephone"
             render={({ field: { onChange, value } }) => (
               <Input
-                label="Email (optional)"
-                keyboardType="email-address"
-                autoCapitalize="none"
+                label="Phone"
+                keyboardType="phone-pad"
+                maxLength={10}
                 value={value}
                 onChangeText={onChange}
-                error={errors.email?.message}
+                error={errors.telephone?.message}
               />
             )}
           />
+
           <Button
             title={isEdit ? 'Update address' : 'Save address'}
             onPress={handleSubmit(onSubmit)}
             loading={submitting}
+            disabled={!resolved || !pinCoords}
             fullWidth
             size="lg"
-            style={{ marginTop: spacing.sm }}
+            style={{ marginTop: spacing.lg }}
           />
         </ScrollView>
       </KeyboardAvoidingView>
@@ -475,24 +557,58 @@ export const AddEditAddressScreen: React.FC<Props> = ({ route, navigation }) => 
 };
 
 const styles = StyleSheet.create({
-  scroll: { padding: spacing.xl },
+  scroll: { padding: spacing.base, paddingBottom: spacing['3xl'] },
   row: { flexDirection: 'row' },
-  useLocationBtn: {
+
+  searchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.base,
+    paddingVertical: spacing.sm,
+    gap: spacing.sm,
+    minHeight: 48,
+    marginBottom: spacing.sm,
+    ...shadows.sm,
+  },
+  searchInput: {
+    flex: 1,
+    fontFamily: fonts.regular,
+    fontSize: fontSizes.base,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    padding: 0,
+  },
+
+  suggestionsCard: {
+    marginBottom: spacing.sm,
+    overflow: 'hidden',
+  },
+  suggestion: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.base,
-    borderRadius: radius.lg,
+  },
+  suggestionDivider: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.divider,
+  },
+
+  resolvedCard: {
     backgroundColor: colors.tintSoft,
     borderWidth: 1,
     borderColor: colors.tintMid,
-    marginBottom: spacing.lg,
+    marginBottom: spacing.sm,
   },
-  useLocationIcon: {
+  refreshBtn: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },

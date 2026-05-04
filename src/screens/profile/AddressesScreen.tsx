@@ -1,5 +1,13 @@
 import React, { useCallback, useState } from 'react';
-import { Alert, FlatList, Pressable, StyleSheet, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Pressable,
+  RefreshControl,
+  StyleSheet,
+  View,
+} from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import {
@@ -21,21 +29,31 @@ import type { CustomerAddress } from '../../types';
 export const AddressesScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const [addresses, setAddresses] = useState<CustomerAddress[] | null>(null);
+  // Refreshing flag — keeps the existing list visible while a fresh fetch
+  // runs in the background, instead of flashing the LoadingScreen every
+  // time the user comes back from AddEditAddress.
+  const [refreshing, setRefreshing] = useState(false);
 
-  const load = async () => {
+  const load = useCallback(async () => {
+    setRefreshing(true);
     try {
       const raw = await addressService.list();
       setAddresses(toArray<CustomerAddress>(raw));
     } catch (e: any) {
       showToast.error('Could not load addresses', e?.message);
-      setAddresses([]);
+      setAddresses(prev => prev ?? []);
+    } finally {
+      setRefreshing(false);
     }
-  };
+  }, []);
 
+  // Refresh every time the screen gains focus (after returning from
+  // AddEditAddress, after deleting, etc.). Old list stays visible during
+  // the fetch so the user doesn't see a loading flicker.
   useFocusEffect(
     useCallback(() => {
       load();
-    }, []),
+    }, [load]),
   );
 
   const handleDelete = (id: number) => {
@@ -61,7 +79,14 @@ export const AddressesScreen: React.FC = () => {
 
   return (
     <Container edges={['top']}>
-      <ScreenHeader title="My Addresses" />
+      <ScreenHeader
+        title="My Addresses"
+        right={
+          refreshing ? (
+            <ActivityIndicator size="small" color={colors.primary} />
+          ) : undefined
+        }
+      />
       {addresses.length === 0 ? (
         <EmptyState
           icon="map-pin"
@@ -77,6 +102,14 @@ export const AddressesScreen: React.FC = () => {
             keyExtractor={a => `a-${a.customerAddressId}`}
             contentContainerStyle={styles.list}
             ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={load}
+                tintColor={colors.primary}
+                colors={[colors.primary]}
+              />
+            }
             renderItem={({ item }) => (
               <Card>
                 <View style={styles.row}>
