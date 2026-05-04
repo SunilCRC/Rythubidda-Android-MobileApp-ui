@@ -209,6 +209,14 @@ export interface ShippingCalcResult {
   shippingCostFormatted?: string;
   displayShippingCost?: string;
   isFreeDelivery?: boolean;
+  /**
+   * Distance-based fields — populated only when the backend used the
+   * distance path (i.e. the cart's address has lat/lng and is within
+   * the configured delivery radius). Absent when the legacy pincode
+   * pricing was used or the address is out of range.
+   */
+  distanceKm?: number;
+  deliveryCenterName?: string;
 }
 
 export interface PincodeValidation {

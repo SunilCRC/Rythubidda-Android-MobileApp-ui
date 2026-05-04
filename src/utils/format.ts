@@ -2,6 +2,15 @@
  * Formatting helpers — money, dates, phone numbers, etc.
  */
 
+/**
+ * Distance in km — 1 decimal under 10km, 0 decimals above.
+ * Returns empty string for null/undefined so it's safe to interpolate.
+ */
+export function formatKm(km: number | undefined | null): string {
+  if (km == null || isNaN(km)) return '';
+  return km < 10 ? `${km.toFixed(1)} km` : `${Math.round(km)} km`;
+}
+
 export function formatINR(amount: number | undefined | null): string {
   if (amount == null || isNaN(amount)) return '₹0';
   return `₹${Number(amount).toLocaleString('en-IN', {

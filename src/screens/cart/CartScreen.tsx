@@ -12,7 +12,6 @@ import { useNavigation } from '@react-navigation/native';
 import {
   Button,
   Card,
-  Divider,
   EmptyState,
   Price,
   SignInPrompt,
@@ -52,8 +51,9 @@ export const CartScreen: React.FC = () => {
 
   const items = toArray<ShoppingItem>(cart?.items);
   const subtotal = cart?.subtotal ?? items.reduce((s, i) => s + i.price * i.qty, 0);
-  const shipping = cart?.shippingCost ?? 0;
-  const total = cart?.orderTotal ?? subtotal + shipping;
+  // Shipping is calculated and displayed only in the Checkout screen
+  // (where the customer's selected address gives us the lat/lng to
+  // compute distance). The cart screen stays focused on items + subtotal.
 
   const handleCheckout = () => {
     if (items.length === 0) return;
@@ -121,13 +121,15 @@ export const CartScreen: React.FC = () => {
                 <Text variant="h6" style={{ marginBottom: spacing.base }}>
                   Order Summary
                 </Text>
-                <Row label="Subtotal" value={formatINR(subtotal)} />
-                <Row
-                  label="Shipping"
-                  value={shipping > 0 ? formatINR(shipping) : 'Calculated at checkout'}
-                />
-                <Divider spacing_={spacing.sm} />
-                <Row label="Total" value={formatINR(total)} bold />
+                <Row label="Subtotal" value={formatINR(subtotal)} bold />
+                <Text
+                  variant="caption"
+                  color={colors.textTertiary}
+                  style={{ marginTop: spacing.xs }}
+                >
+                  Shipping is shown at checkout, based on distance from our
+                  warehouse to your delivery address.
+                </Text>
               </Card>
             }
           />

@@ -26,7 +26,7 @@ import {
   requestLocationPermission,
 } from '../../utils/locationPermissions';
 import { getCurrentLocation } from '../../utils/geolocation';
-import { reverseGeocode } from '../../utils/googleGeocode';
+import { forwardGeocode, reverseGeocode } from '../../utils/googleGeocode';
 import { haptics } from '../../utils/haptics';
 import { colors } from '../../theme/colors';
 import { radius, spacing } from '../../theme/spacing';
@@ -223,10 +223,42 @@ export const AddEditAddressScreen: React.FC<Props> = ({ route, navigation }) => 
   const onSubmit = async (data: AddressInput) => {
     setSubmitting(true);
     try {
+      // Auto-geocode if the user filled the form manually (no GPS) and we
+      // therefore don't have lat/lng yet. The backend uses these for
+      // distance-based shipping — without them, that address falls back to
+      // the legacy pincode pricing. Best-effort: if geocoding fails for
+      // any reason (rate limit, no internet) we still save the address.
+      let payload: AddressInput = data;
+      if (
+        typeof data.latitude !== 'number' ||
+        typeof data.longitude !== 'number'
+      ) {
+        const composite = [
+          data.address1,
+          data.address2,
+          data.city,
+          data.state,
+          data.postcode,
+          'India',
+        ]
+          .filter(Boolean)
+          .join(', ');
+        const geo = await forwardGeocode(composite);
+        if (geo.ok) {
+          payload = {
+            ...data,
+            latitude: geo.address.latitude,
+            longitude: geo.address.longitude,
+          };
+        }
+        // No toast on geocode failure — the save still works, just with
+        // legacy shipping pricing.
+      }
+
       if (isEdit) {
-        await addressService.update({ ...data, customerAddressId: addressId });
+        await addressService.update({ ...payload, customerAddressId: addressId });
       } else {
-        await addressService.save(data);
+        await addressService.save(payload);
       }
       showToast.success(isEdit ? 'Address updated' : 'Address saved');
       navigation.goBack();

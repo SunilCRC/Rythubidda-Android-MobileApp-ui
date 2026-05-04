@@ -281,3 +281,111 @@ export async function reverseGeocode(
 
   return { ok: true, address };
 }
+
+/**
+ * Forward-geocode: typed-address text → lat/lng + structured address.
+ *
+ * Used when a user fills the AddEditAddress form manually (without using
+ * the GPS button) and we still want lat/lng on the saved row so the
+ * distance-based shipping calculator on the backend can run.
+ *
+ * Cost: same per-request rate as reverseGeocode. We only call it once per
+ * address save when the form has no lat/lng yet — so well under the daily
+ * cap. India is biased via `region=in` and `components=country:IN`.
+ *
+ * Caller should pass a reasonable composite string like
+ *   "Plot 42, Kukatpally Housing Board, Hyderabad, Telangana 500072".
+ * Empty / very short strings short-circuit to no_result without a request.
+ */
+export async function forwardGeocode(
+  addressText: string,
+): Promise<ReverseGeocodeResult> {
+  const trimmed = addressText.trim();
+  if (trimmed.length < 8) {
+    return { ok: false, error: 'no_result' };
+  }
+
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    if (__DEV__) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        '[geocode] GOOGLE_MAPS_API_KEY is empty at runtime — cannot forward-geocode.',
+      );
+    }
+    return {
+      ok: false,
+      error: 'key_missing',
+      message: 'GOOGLE_MAPS_API_KEY not bundled into APK — rebuild required.',
+    };
+  }
+
+  const params = new URLSearchParams({
+    address: trimmed,
+    key: apiKey,
+    region: 'in',
+    components: 'country:IN',
+    language: 'en',
+  });
+  const url = `${GEOCODE_URL}?${params.toString()}`;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: 'GET',
+      signal: controller.signal,
+      headers: { Accept: 'application/json' },
+    });
+  } catch (e: any) {
+    clearTimeout(timer);
+    if (e?.name === 'AbortError') return { ok: false, error: 'timeout' };
+    return { ok: false, error: 'network', message: e?.message };
+  }
+  clearTimeout(timer);
+
+  if (!res.ok) {
+    return { ok: false, error: 'network', message: `HTTP ${res.status}` };
+  }
+
+  let json: GeocodeResponse;
+  try {
+    json = (await res.json()) as GeocodeResponse;
+  } catch {
+    return { ok: false, error: 'invalid_response' };
+  }
+
+  switch (json.status) {
+    case 'OK':
+      break;
+    case 'ZERO_RESULTS':
+      return { ok: false, error: 'no_result' };
+    case 'OVER_QUERY_LIMIT':
+      return { ok: false, error: 'over_limit', message: json.error_message };
+    case 'REQUEST_DENIED':
+    case 'INVALID_REQUEST':
+      if (__DEV__) {
+        // eslint-disable-next-line no-console
+        console.warn(`[geocode] Google rejected key (forward): ${json.error_message ?? json.status}`);
+      }
+      return { ok: false, error: 'key_rejected', message: json.error_message };
+    default:
+      return {
+        ok: false,
+        error: 'invalid_response',
+        message: `${json.status}: ${json.error_message ?? ''}`,
+      };
+  }
+
+  // Use the geometry's lat/lng as authoritative — caller has nothing else.
+  const result = json.results?.[0];
+  const loc = result?.geometry?.location;
+  if (!result || !loc) return { ok: false, error: 'no_result' };
+
+  const address = parseResults(json, loc.lat, loc.lng);
+  if (!address) {
+    return { ok: false, error: 'no_result', message: 'No pincode at this location' };
+  }
+  return { ok: true, address };
+}
