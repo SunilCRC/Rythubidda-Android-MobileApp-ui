@@ -30,6 +30,7 @@ export const ENDPOINTS = {
   GALLERY_MAIN: '/api/v1/shop/gallery/main',
   BANNERS_ACTIVE: '/api/v1/shop/banners/active',
   PINCODE_VALIDATE: '/api/v1/shop/pincode/validate',
+  DELIVERY_CENTERS: '/api/v1/shop/delivery-centers',
 
   // Cart
   CART: '/api/v1/shop/cart',

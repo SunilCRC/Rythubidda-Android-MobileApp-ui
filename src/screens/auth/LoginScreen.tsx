@@ -11,14 +11,13 @@ import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import FastImage from 'react-native-fast-image';
-import Icon from 'react-native-vector-icons/Feather';
 import { Button, Input, Text } from '../../components/common';
 import { Container } from '../../components/layout/Container';
 import { loginSchema, LoginInput } from '../../utils/validation';
 import { useAuthStore } from '../../store';
 import { showToast } from '../../utils/toast';
 import { colors } from '../../theme/colors';
-import { radius, spacing } from '../../theme/spacing';
+import { spacing } from '../../theme/spacing';
 import type { AuthStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
@@ -157,38 +156,6 @@ export const LoginScreen: React.FC<Props> = ({ navigation }) => {
             style={{ marginTop: spacing.base }}
           />
 
-          {/* Social divider */}
-          <View style={styles.dividerRow}>
-            <View style={styles.hr} />
-            <Text
-              variant="caption"
-              weight="600"
-              color={colors.textSecondary}
-              style={styles.dividerLabel}
-            >
-              or continue with
-            </Text>
-            <View style={styles.hr} />
-          </View>
-
-          <Pressable
-            onPress={() =>
-              showToast.info('Google sign-in coming soon', 'Use mobile login for now.')
-            }
-            style={styles.socialBtn}
-            android_ripple={{ color: colors.pressed }}
-          >
-            <Icon name="chrome" size={18} color={colors.primary} />
-            <Text
-              variant="button"
-              weight="700"
-              color={colors.textPrimary}
-              style={{ marginLeft: spacing.sm }}
-            >
-              Continue with Google
-            </Text>
-          </Pressable>
-
           <View style={styles.footer}>
             <Text variant="bodySmall" weight="600" color={colors.textSecondary}>
               Don't have an account?{' '}
@@ -218,23 +185,6 @@ const styles = StyleSheet.create({
   },
   logo: { width: 84, height: 84 },
   forgot: { alignSelf: 'flex-end', marginTop: -spacing.xs, marginBottom: spacing.xs },
-  dividerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: spacing.xl,
-  },
-  hr: { flex: 1, height: 1, backgroundColor: colors.divider },
-  dividerLabel: { marginHorizontal: spacing.sm },
-  socialBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: 54,
-    borderRadius: radius.lg,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-  },
   footer: {
     flexDirection: 'row',
     justifyContent: 'center',

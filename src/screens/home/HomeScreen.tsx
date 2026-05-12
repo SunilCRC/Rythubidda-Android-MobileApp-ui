@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import LinearGradient from 'react-native-linear-gradient';
+import FastImage from 'react-native-fast-image';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigation } from '@react-navigation/native';
 import { catalogService } from '../../api/services';
@@ -57,10 +58,7 @@ export const HomeScreen: React.FC = () => {
   const isAuth = useIsAuthenticated();
 
   const openLogin = () =>
-    navigation
-      .getParent()
-      ?.getParent()
-      ?.navigate('Auth', { screen: 'Login' });
+    navigation.getParent()?.getParent()?.navigate('Auth', { screen: 'Login' });
 
   const gallery = useQuery({
     queryKey: ['gallery'],
@@ -114,75 +112,114 @@ export const HomeScreen: React.FC = () => {
 
   return (
     <Container edges={['top']} background={colors.background}>
-      {/* Sticky top bar */}
-      <View style={styles.topBar}>
-        <View style={{ flex: 1 }}>
-          <Text variant="caption" color={colors.textTertiary}>
-            {greet}
-          </Text>
-          <Text
-            variant="h5"
-            color={colors.textPrimary}
-            weight="700"
-            numberOfLines={1}
-          >
-            {isAuth ? `Hi, ${firstName} 👋` : 'Welcome to Rythu Bidda'}
-          </Text>
-        </View>
-        {!isAuth ? (
-          <Pressable
-            onPress={openLogin}
-            android_ripple={{ color: colors.pressed }}
-            style={styles.signInBtn}
-            hitSlop={6}
-          >
-            <LinearGradient
-              colors={colors.gradients.primary}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.signInInner}
+      {/* ── Sophisticated header band ────────────────────────────────────
+           Soft cream gradient backdrop carrying the logo, greeting, and
+           sign-in / avatar pill. Sets a premium tone before the user even
+           scrolls. */}
+      <LinearGradient
+        colors={[colors.tintSoft, colors.background]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        style={styles.headerBand}
+      >
+        <View style={styles.topBar}>
+          {/* Greeting + sign-in (guest only). Takes remaining horizontal
+              space so the brand image on the right has a solid anchor. */}
+          <View style={styles.greetCol}>
+            <Text variant="caption" weight="700" color={colors.textTertiary}>
+              {greet} ✨
+            </Text>
+            <Text
+              variant="h4"
+              weight="800"
+              color={colors.textPrimary}
+              numberOfLines={1}
             >
-              <Icon name="log-in" size={12} color={colors.white} />
-              <Text
-                variant="caption"
-                color={colors.white}
-                weight="700"
-                style={{ marginLeft: 4 }}
+              {isAuth ? `Hi, ${firstName}` : 'Welcome'}
+            </Text>
+            <Text
+              variant="caption"
+              weight="600"
+              color={colors.textSecondary}
+              numberOfLines={1}
+              style={{ marginTop: 2 }}
+            >
+              {isAuth
+                ? 'Fresh harvest, farmer-first.'
+                : 'Sign in for fresh deliveries.'}
+            </Text>
+
+            {!isAuth ? (
+              <Pressable
+                onPress={openLogin}
+                android_ripple={{ color: colors.pressed }}
+                style={styles.signInBtn}
+                hitSlop={6}
               >
-                Sign In
-              </Text>
-            </LinearGradient>
-          </Pressable>
-        ) : null}
-      </View>
+                <LinearGradient
+                  colors={colors.gradients.primary}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.signInInner}
+                >
+                  <Icon name="log-in" size={12} color={colors.white} />
+                  <Text
+                    variant="caption"
+                    color={colors.white}
+                    weight="800"
+                    style={{ marginLeft: 4 }}
+                  >
+                    Sign In
+                  </Text>
+                </LinearGradient>
+              </Pressable>
+            ) : null}
+          </View>
 
-      {/* Deliver-to pill — Zepto/Swiggy/Blinkit pattern. Always visible
-          so users see their delivery pincode without digging into cart. */}
-      <View style={styles.deliverToWrap}>
-        <DeliverToPill />
-      </View>
+          {/* Animated cow GIF — playful brand mark on the right.
+              FastImage uses Glide on Android / SDWebImage on iOS, both
+              of which decode and loop GIFs natively. No extra deps. */}
+          <FastImage
+            source={require('../../assets/images/cow-animation.gif')}
+            style={styles.brandImage}
+            resizeMode={FastImage.resizeMode.contain}
+          />
+        </View>
 
-      {/* Sticky search bar — lives outside the ScrollView so it stays anchored */}
-      <View style={styles.searchBarWrap}>
-        <Pressable
-          onPress={() => navigation.navigate('Search')}
-          style={styles.searchBar}
-          android_ripple={{ color: colors.pressed }}
-        >
-          <Icon name="search" size={18} color={colors.primary} />
-          <Text
-            variant="body"
-            weight="600"
-            color={colors.textSecondary}
-            style={{ flex: 1, marginLeft: spacing.sm }}
-            numberOfLines={1}
+        {/* Deliver-to pill — Zepto / Swiggy / Blinkit pattern */}
+        <View style={styles.deliverToWrap}>
+          <DeliverToPill />
+        </View>
+
+        {/* Premium search bar */}
+        <View style={styles.searchBarWrap}>
+          <Pressable
+            onPress={() => navigation.navigate('Search')}
+            style={({ pressed }) => [
+              styles.searchBar,
+              pressed && { opacity: 0.92 },
+            ]}
+            android_ripple={{ color: colors.pressed }}
           >
-            Search for rice, jaggery, spices…
-          </Text>
-          <View style={styles.searchDivider} />
-          <Icon name="mic" size={16} color={colors.primary} />
-        </Pressable>
-      </View>
+            <View style={styles.searchIconWell}>
+              <Icon name="search" size={16} color={colors.primary} />
+            </View>
+            <Text
+              variant="body"
+              weight="600"
+              color={colors.textSecondary}
+              style={{ flex: 1, marginLeft: spacing.sm }}
+              numberOfLines={1}
+            >
+              Search rice, jaggery, spices…
+            </Text>
+            <View style={styles.searchDivider} />
+            <View style={styles.micBtn}>
+              <Icon name="mic" size={14} color={colors.primary} />
+            </View>
+          </Pressable>
+        </View>
+      </LinearGradient>
 
       <ScrollView
         contentContainerStyle={styles.scroll}
@@ -196,10 +233,10 @@ export const HomeScreen: React.FC = () => {
           />
         }
       >
-        {/* Hero */}
+        {/* Hero carousel */}
         {gallery.isLoading ? (
           <Skeleton
-            height={180}
+            height={188}
             style={{
               marginHorizontal: spacing.base,
               marginTop: spacing.base,
@@ -207,30 +244,37 @@ export const HomeScreen: React.FC = () => {
             }}
           />
         ) : (
-          <HeroCarousel images={galleryList} height={180} />
+          <View style={styles.heroWrap}>
+            <HeroCarousel images={galleryList} height={188} />
+          </View>
         )}
 
-        {/* Free shipping strip */}
+        {/* Free shipping promo — wider, more prominent gradient strip */}
         <LinearGradient
           colors={colors.gradients.harvest}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 0 }}
           style={styles.promoStrip}
         >
-          <Icon name="truck" size={15} color={colors.primaryDark} />
+          <View style={styles.promoIconWell}>
+            <Icon name="truck" size={14} color={colors.primaryDark} />
+          </View>
           <Text
             variant="bodySmall"
             color={colors.primaryDark}
-            weight="600"
-            style={{ marginLeft: 6 }}
+            weight="700"
+            style={{ marginLeft: spacing.sm, flex: 1 }}
+            numberOfLines={1}
           >
-            Free delivery on orders above ₹1,000
+            FREE delivery on orders above ₹1,000
           </Text>
+          <Icon name="arrow-right" size={14} color={colors.primaryDark} />
         </LinearGradient>
 
         {/* Categories */}
         <SectionHeader
           title="Shop by category"
+          icon="grid"
           action={() => navigation.navigate('CategoriesTab')}
           actionLabel="See all"
         />
@@ -239,9 +283,9 @@ export const HomeScreen: React.FC = () => {
             {Array.from({ length: 5 }).map((_, i) => (
               <View key={i} style={{ marginRight: spacing.base }}>
                 <Skeleton
-                  width={64}
-                  height={64}
-                  borderRadius={32}
+                  width={68}
+                  height={68}
+                  borderRadius={34}
                   style={{ marginBottom: 6 }}
                 />
                 <Skeleton width={60} height={10} borderRadius={5} />
@@ -270,17 +314,15 @@ export const HomeScreen: React.FC = () => {
                   style={styles.catItem}
                   android_ripple={{ color: colors.pressed, borderless: true, radius: 40 }}
                 >
-                  <View
-                    style={[styles.catIcon, { backgroundColor: color.bg }]}
-                  >
-                    <Icon name={iconName} size={24} color={color.icon} />
+                  <View style={[styles.catIcon, { backgroundColor: color.bg }]}>
+                    <Icon name={iconName} size={26} color={color.icon} />
                   </View>
                   <Text
                     variant="caption"
                     color={colors.textPrimary}
                     align="center"
                     numberOfLines={2}
-                    weight="600"
+                    weight="700"
                   >
                     {item.name}
                   </Text>
@@ -293,7 +335,7 @@ export const HomeScreen: React.FC = () => {
         {/* Best Sellers */}
         {bestSellers.length > 0 ? (
           <>
-            <SectionHeader title="🏆 Best Sellers" />
+            <SectionHeader title="Best Sellers" icon="award" />
             <HorizontalProducts
               products={bestSellers}
               onPress={goToProduct(navigation)}
@@ -305,7 +347,7 @@ export const HomeScreen: React.FC = () => {
         {/* New Arrivals */}
         {newArrivals.length > 0 ? (
           <>
-            <SectionHeader title="✨ New Arrivals" />
+            <SectionHeader title="New Arrivals" icon="zap" />
             <HorizontalProducts
               products={newArrivals}
               onPress={goToProduct(navigation)}
@@ -315,7 +357,7 @@ export const HomeScreen: React.FC = () => {
         ) : null}
 
         {/* Featured grid */}
-        <SectionHeader title="Featured for you" />
+        <SectionHeader title="Featured for you" icon="star" />
         {featured.isLoading ? (
           <View style={styles.skeletonGrid}>
             {Array.from({ length: 4 }).map((_, i) => (
@@ -357,7 +399,19 @@ export const HomeScreen: React.FC = () => {
           </Text>
         )}
 
-        <View style={{ height: spacing['3xl'] }} />
+        {/* Brand footer accent */}
+        <View style={styles.footerAccent}>
+          <Text
+            variant="caption"
+            weight="700"
+            color={colors.textTertiary}
+            align="center"
+          >
+            🌾  Farm-fresh, farmer-first  🌾
+          </Text>
+        </View>
+
+        <View style={{ height: spacing['2xl'] }} />
       </ScrollView>
     </Container>
   );
@@ -375,20 +429,41 @@ function greeting() {
   return 'Good evening';
 }
 
+/**
+ * Section header with a tinted icon well, the title, and an optional
+ * trailing action ("See all"). The icon adds a small but consistent
+ * visual rhythm across the screen — every section is identifiable at a
+ * glance even before the user reads the title.
+ */
 const SectionHeader: React.FC<{
   title: string;
+  icon?: string;
   action?: () => void;
   actionLabel?: string;
-}> = ({ title, action, actionLabel }) => (
+}> = ({ title, icon, action, actionLabel }) => (
   <View style={styles.sectionHeader}>
-    <Text variant="h5" color={colors.textPrimary} weight="700">
-      {title}
-    </Text>
+    <View style={styles.sectionTitleRow}>
+      {icon ? (
+        <View style={styles.sectionIconWell}>
+          <Icon name={icon} size={14} color={colors.primary} />
+        </View>
+      ) : null}
+      <Text variant="h5" color={colors.textPrimary} weight="800">
+        {title}
+      </Text>
+    </View>
     {action && actionLabel ? (
-      <Pressable onPress={action} hitSlop={6}>
-        <Text variant="bodySmall" color={colors.primary} weight="700">
-          {actionLabel}
-        </Text>
+      <Pressable
+        onPress={action}
+        hitSlop={6}
+        android_ripple={{ color: colors.pressed, borderless: true, radius: 24 }}
+      >
+        <View style={styles.sectionActionPill}>
+          <Text variant="caption" color={colors.primary} weight="800">
+            {actionLabel}
+          </Text>
+          <Icon name="chevron-right" size={12} color={colors.primary} />
+        </View>
       </Pressable>
     ) : null}
   </View>
@@ -473,51 +548,69 @@ const HorizontalProducts: React.FC<{
 };
 
 const styles = StyleSheet.create({
+  // ── Header band ───────────────────────────────────────────────────────
+  headerBand: {
+    paddingBottom: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.tintMid,
+    ...shadows.sm,
+    zIndex: 5,
+  },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: spacing.base,
-    paddingVertical: spacing.sm,
-    backgroundColor: colors.background,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xs,
+  },
+  greetCol: { flex: 1, paddingRight: spacing.sm },
+  // Large brand image on the right — sized to read as a brand mark, not
+  // a profile picture. Matches the visual prominence used by Country
+  // Delight, Otipy, and other Indian agri brands on their home headers.
+  brandImage: {
+    width: 150,
+    height: 80,
   },
   signInBtn: {
+    alignSelf: 'flex-start',
     borderRadius: 999,
     overflow: 'hidden',
+    marginTop: spacing.sm,
     ...shadows.sm,
   },
   signInInner: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: spacing.base,
-    paddingVertical: 7,
+    paddingVertical: 8,
   },
   deliverToWrap: {
     paddingHorizontal: spacing.base,
     paddingBottom: spacing.sm,
-    backgroundColor: colors.background,
     flexDirection: 'row',
   },
-  scroll: { paddingBottom: spacing.xl },
-  // Sticky wrapper — solid surface, soft separation from list below.
   searchBarWrap: {
-    backgroundColor: colors.background,
     paddingHorizontal: spacing.base,
     paddingTop: spacing.xs,
-    paddingBottom: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.divider,
-    ...shadows.sm,
-    zIndex: 5,
   },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.base,
-    paddingVertical: 12,
+    paddingHorizontal: 6,
+    paddingVertical: 6,
     borderRadius: radius.full,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
+    ...shadows.sm,
+  },
+  searchIconWell: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.tintSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   searchDivider: {
     width: 1,
@@ -525,15 +618,44 @@ const styles = StyleSheet.create({
     backgroundColor: colors.divider,
     marginHorizontal: spacing.sm,
   },
+  micBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 4,
+  },
+
+  // ── Scroll area ────────────────────────────────────────────────────────
+  scroll: { paddingBottom: spacing.xl },
+
+  // Hero
+  heroWrap: {
+    paddingTop: spacing.base,
+  },
+
+  // Promo strip
   promoStrip: {
     flexDirection: 'row',
     alignItems: 'center',
-    alignSelf: 'center',
     paddingHorizontal: spacing.base,
-    paddingVertical: spacing.xs,
+    paddingVertical: 10,
     borderRadius: radius.full,
     marginTop: spacing.base,
+    marginHorizontal: spacing.base,
+    ...shadows.sm,
   },
+  promoIconWell: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  // Section header
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -542,6 +664,31 @@ const styles = StyleSheet.create({
     marginTop: spacing.xl,
     marginBottom: spacing.sm,
   },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  sectionIconWell: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: colors.tintSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.sm,
+  },
+  sectionActionPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.tintSoft,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: radius.full,
+    gap: 2,
+  },
+
+  // Categories
   hRow: { flexDirection: 'row', paddingHorizontal: spacing.base },
   hList: {
     paddingHorizontal: spacing.base,
@@ -553,13 +700,16 @@ const styles = StyleSheet.create({
     marginRight: spacing.base,
   },
   catIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 68,
+    height: 68,
+    borderRadius: 34,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 6,
+    ...shadows.sm,
   },
+
+  // Featured grid
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -574,6 +724,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
+    paddingHorizontal: spacing.base,
+  },
+
+  // Footer accent
+  footerAccent: {
+    paddingTop: spacing.xl,
+    paddingBottom: spacing.base,
     paddingHorizontal: spacing.base,
   },
 });

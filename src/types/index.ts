@@ -224,6 +224,30 @@ export interface PincodeValidation {
   zipCode?: string;
 }
 
+/**
+ * One active store from the backend's `delivery_center` table. Mobile
+ * fetches the full list on app launch and computes distance to the
+ * NEAREST one when deciding shipping cost.
+ */
+export interface DeliveryCenter {
+  id: number;
+  name: string;
+  latitude: number;
+  longitude: number;
+  maxRadiusKm: number;
+  /** Per-store rate override. null → use global perKmRate. */
+  perKmRate?: number | null;
+}
+
+/**
+ * Full shipping config the mobile fetches once. Centers + global defaults.
+ */
+export interface ShippingConfig {
+  centers: DeliveryCenter[];
+  perKmRate: number;
+  freeAboveCartAmount: number;
+}
+
 export interface DeliveryInfo {
   cartId: string | number;
   addressId: number;

@@ -7,7 +7,18 @@ import { clearToken, getToken } from '../utils/authStorage';
  * - Base URL from .env (falls back to production).
  * - Request interceptor attaches Bearer JWT.
  * - Response interceptor normalises errors and auto-logs-out on 401.
+ * - Auto-fallback: if the primary URL (typically local dev) fails with
+ *   a NETWORK error, we silently retry once against the fallback URL
+ *   (typically production). Once switched, all subsequent requests go
+ *   to the fallback for the rest of the session. Resets on app launch.
  */
+
+/**
+ * Tracks whether the fallback URL is currently active. Once true, the
+ * interceptor stops trying the primary — every request goes straight
+ * to the fallback. Reset on app launch (module re-evaluation).
+ */
+let usingFallback = false;
 
 export interface ApiError {
   status?: number;
@@ -63,13 +74,53 @@ apiClient.interceptors.response.use(
       console.warn(`[API] ✗ ${status ?? 'NETWORK'} ${url}`, error.message);
     }
 
+    // ── Auto-fallback to the secondary URL on network failure ──────────
+    // Only triggers when:
+    //   • a fallback is configured (different from primary)
+    //   • we haven't switched yet (prevents infinite loop)
+    //   • this is a NETWORK error (no response from server) — NOT a 4xx/5xx
+    //   • the request is retryable (has a config object, isn't already a retry)
+    const isNetworkError = !error.response;
+    const isTimeout = error.code === 'ECONNABORTED';
+    const fallback = APP_CONFIG.API_BASE_URL_FALLBACK;
+    const cfg = error.config as
+      | (AxiosRequestConfig & { _isFallbackRetry?: boolean })
+      | undefined;
+
+    if (
+      (isNetworkError || isTimeout) &&
+      !usingFallback &&
+      fallback &&
+      cfg &&
+      !cfg._isFallbackRetry
+    ) {
+      usingFallback = true;
+      apiClient.defaults.baseURL = fallback;
+      if (__DEV__) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[API] primary URL unreachable — switching to fallback: ${fallback}`,
+        );
+      }
+      try {
+        return await apiClient({
+          ...cfg,
+          baseURL: fallback,
+          _isFallbackRetry: true,
+        } as AxiosRequestConfig);
+      } catch (retryErr) {
+        // Fallback also failed — let the normal error path handle it below.
+        error = retryErr as AxiosError<any>;
+      }
+    }
+
     if (status === 401) {
       await clearToken();
       if (onUnauthorized) await onUnauthorized();
     }
 
     const normalised: ApiError = {
-      status,
+      status: error.response?.status,
       message: extractMessage(error),
       data: error.response?.data,
       isNetworkError: !error.response,

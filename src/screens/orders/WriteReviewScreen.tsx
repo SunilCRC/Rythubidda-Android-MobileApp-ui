@@ -232,10 +232,7 @@ export const WriteReviewScreen: React.FC<Props> = ({ route, navigation }) => {
         {submittedItems.map(it => {
           const review = it.productReview!;
           return (
-            <Card
-              key={`done-${it.id}`}
-              style={[styles.cardSpacing, styles.submittedCard]}
-            >
+            <Card key={`done-${it.id}`} style={styles.cardSpacing}>
               <View style={styles.itemRow}>
                 <FastImage
                   source={{ uri: pickFirstImage(it.image) }}
@@ -357,16 +354,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.palette.secondary[100],
   },
   cardSpacing: { marginBottom: spacing.base },
-  submittedCard: {
-    backgroundColor: colors.successSoft,
-    borderWidth: 1,
-    borderColor: colors.success,
-  },
   submittedBody: {
     marginTop: spacing.sm,
     paddingTop: spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(42, 157, 143, 0.25)',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.divider,
   },
   successBanner: {
     flexDirection: 'row',

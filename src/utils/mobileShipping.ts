@@ -1,45 +1,48 @@
 /**
  * Mobile-side shipping calculator.
  *
- * Why on mobile (not just calling backend)? — instant UI feedback. The
- * customer picks an address, the cost appears with no network round-trip.
- * Backend still gets the final cost via the existing calculate-shipping
- * endpoint at order time, so order persistence is unaffected.
- *
  * Inputs:
- *   - customer's lat/lng (from address.latitude/longitude — set when the
- *     address was saved with GPS, or backfilled by Google forward-geocode)
+ *   - customer's lat/lng (from address.latitude/longitude, set when the
+ *     address was saved via GPS or backfilled by Google forward-geocode)
  *   - cart subtotal (drives the free-shipping check)
+ *   - the list of active delivery centers fetched from the backend on
+ *     app launch (so this stays in sync with the `delivery_center` table)
+ *   - global perKmRate + freeAboveCartAmount (from the same fetch)
  *
- * Output: a Result describing the cost + the distance + a one-line
- * human-readable subtitle for the UI.
+ * Strategy: find the NEAREST active center → if customer is within that
+ * center's max radius, compute cost = perKmRate × distance. If the
+ * customer is outside every center's radius, mark out-of-range.
+ *
+ * Fallback: when `centers` is empty/undefined (offline, first launch
+ * before the fetch resolved, server down), we use the hardcoded
+ * `SHIPPING_CONFIG` as a single-store fallback. App still works in
+ * degraded mode.
  */
 
 import { SHIPPING_CONFIG } from '../constants/shipping';
+import type { DeliveryCenter } from '../types';
 
 export interface ShippingResult {
-  /** True when the address is within the serviceable radius. */
+  /** True when the customer is inside the nearest store's radius. */
   applicable: boolean;
-  /** Haversine distance (km) from the warehouse. */
+  /** Haversine distance (km) to the nearest store. */
   distanceKm: number;
   /** Shipping cost in ₹. 0 when applicable=false OR free shipping. */
   cost: number;
   /** True when subtotal hit the free-shipping threshold. */
   isFree: boolean;
+  /** Name of the nearest store — surfaced as "X km from <NAME>". */
+  centerName: string;
 }
 
-/**
- * Great-circle distance between two WGS84 points. Same formula the
- * backend uses (GeoDistance.haversineKm) — keeps mobile + backend
- * agreeing on the number to ~0.5% accuracy.
- */
+/** Great-circle distance between two WGS84 points (km). */
 export function haversineKm(
   lat1: number,
   lng1: number,
   lat2: number,
   lng2: number,
 ): number {
-  const R = 6371; // mean earth radius in km
+  const R = 6371;
   const dLat = toRadians(lat2 - lat1);
   const dLng = toRadians(lng2 - lng1);
   const a =
@@ -55,33 +58,85 @@ function toRadians(deg: number): number {
 }
 
 /**
- * Compute shipping for a customer at (lat, lng) given the cart subtotal.
  * Pure function — no side effects, no network. Safe to call on every
  * render or address change.
+ *
+ * @param centers              Active centers from `useDeliveryCenterStore`.
+ *                             If empty / undefined, falls back to a single
+ *                             synthetic center built from SHIPPING_CONFIG.
+ * @param globalPerKmRate      Global ₹/km from backend. Used when a center
+ *                             has no `perKmRate` override.
+ * @param freeAboveCartAmount  Cart-subtotal threshold for free shipping.
  */
 export function calculateShippingMobile(
   customerLat: number,
   customerLng: number,
   subtotal: number,
+  centers?: DeliveryCenter[],
+  globalPerKmRate?: number,
+  freeAboveCartAmount?: number,
 ): ShippingResult {
-  const distance = haversineKm(
-    SHIPPING_CONFIG.warehouseLat,
-    SHIPPING_CONFIG.warehouseLng,
-    customerLat,
-    customerLng,
-  );
+  // Resolve the candidate list. If none provided, use the hardcoded
+  // fallback so the app still works before the splash fetch completes.
+  const usable: DeliveryCenter[] =
+    centers && centers.length > 0
+      ? centers
+      : [
+          {
+            id: 0,
+            name: SHIPPING_CONFIG.warehouseName,
+            latitude: SHIPPING_CONFIG.warehouseLat,
+            longitude: SHIPPING_CONFIG.warehouseLng,
+            maxRadiusKm: SHIPPING_CONFIG.maxRadiusKm,
+            perKmRate: null,
+          },
+        ];
 
-  if (distance > SHIPPING_CONFIG.maxRadiusKm) {
-    return { applicable: false, distanceKm: distance, cost: 0, isFree: false };
+  // Find the nearest center.
+  let nearest = usable[0];
+  let minDistance = Infinity;
+  for (const c of usable) {
+    const d = haversineKm(c.latitude, c.longitude, customerLat, customerLng);
+    if (d < minDistance) {
+      minDistance = d;
+      nearest = c;
+    }
   }
 
-  const free =
-    SHIPPING_CONFIG.freeAboveCartAmount > 0 &&
-    subtotal >= SHIPPING_CONFIG.freeAboveCartAmount;
-  if (free) {
-    return { applicable: true, distanceKm: distance, cost: 0, isFree: true };
+  // Out of range: customer is farther than the NEAREST store's radius.
+  if (minDistance > nearest.maxRadiusKm) {
+    return {
+      applicable: false,
+      distanceKm: minDistance,
+      cost: 0,
+      isFree: false,
+      centerName: nearest.name,
+    };
   }
 
-  const cost = Math.round(SHIPPING_CONFIG.perKmRate * distance);
-  return { applicable: true, distanceKm: distance, cost, isFree: false };
+  // Free shipping?
+  const threshold = freeAboveCartAmount ?? SHIPPING_CONFIG.freeAboveCartAmount;
+  if (threshold > 0 && subtotal >= threshold) {
+    return {
+      applicable: true,
+      distanceKm: minDistance,
+      cost: 0,
+      isFree: true,
+      centerName: nearest.name,
+    };
+  }
+
+  // Per-store rate beats global rate beats the hardcoded constant.
+  const rate =
+    typeof nearest.perKmRate === 'number'
+      ? nearest.perKmRate
+      : globalPerKmRate ?? SHIPPING_CONFIG.perKmRate;
+
+  return {
+    applicable: true,
+    distanceKm: minDistance,
+    cost: Math.round(rate * minDistance),
+    isFree: false,
+    centerName: nearest.name,
+  };
 }

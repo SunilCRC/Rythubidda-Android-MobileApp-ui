@@ -23,13 +23,16 @@ import { radius, spacing } from '../../theme/spacing';
 import {
   addressService,
   cartService,
-  catalogService,
   paymentService,
 } from '../../api/services';
 import { forwardGeocode } from '../../utils/googleGeocode';
 import { calculateShippingMobile } from '../../utils/mobileShipping';
 import { formatKm } from '../../utils/format';
-import { useAuthStore, useCartStore } from '../../store';
+import {
+  useAuthStore,
+  useCartStore,
+  useDeliveryCenterStore,
+} from '../../store';
 import { showToast } from '../../utils/toast';
 import { formatINR, toArray } from '../../utils/format';
 import { SHIPPING_CONFIG } from '../../constants/shipping';
@@ -41,16 +44,21 @@ export const CheckoutScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const { cart, refresh, clear } = useCartStore();
   const user = useAuthStore(s => s.user);
+  // Live delivery-center config (centers + global rate) fetched on splash.
+  // mobileShipping reads from this so the app stays in sync with the
+  // backend's `delivery_center` table — no APK redeploy needed when a
+  // store is added or moved.
+  const shippingConfig = useDeliveryCenterStore(s => s.config);
 
   const [addresses, setAddresses] = useState<CustomerAddress[]>([]);
   const [addressId, setAddressId] = useState<number | undefined>();
   const [shippingCost, setShippingCost] = useState<number | undefined>();
   const [freeDelivery, setFreeDelivery] = useState(false);
-  const [pincodeOk, setPincodeOk] = useState<boolean | undefined>();
-  // Distance-based fields surfaced by the backend when the selected
-  // address has lat/lng AND falls within delivery-center radius.
-  // Mobile is google-only — if these are absent after a calculation,
-  // we treat the address as out-of-range and block checkout.
+  // Mobile shipping is purely distance-based — we do NOT call the legacy
+  // `pincodes_validation` lookup here. Serviceability is determined by
+  // whether the customer's coords fall inside the radius of ANY active
+  // store (computed in `calculateShippingMobile`). If not, `outOfRange`
+  // fires and checkout is blocked.
   const [distanceKm, setDistanceKm] = useState<number | undefined>();
   const [centerName, setCenterName] = useState<string | undefined>();
   const [outOfRange, setOutOfRange] = useState(false);
@@ -78,14 +86,16 @@ export const CheckoutScreen: React.FC = () => {
 
   // Compute shipping ENTIRELY on the mobile side using Google-resolved
   // coordinates. The flow:
-  //   1. Validate pincode (existing serviceability gate)
-  //   2. Make sure the address has lat/lng — if missing, forward-geocode
-  //      from its fields via Google and persist back to the backend
-  //   3. Run the local Haversine + per-km calculator
+  //   1. Ensure the address has lat/lng — forward-geocode if missing
+  //      (legacy rows, or backend's POST controller dropped them).
+  //   2. Run the local Haversine + per-km calculator → if the result is
+  //      "applicable", we deliver; otherwise the address is out of range.
   //
-  // No backend `calculateShipping` call is needed for display — the math
-  // is identical on both sides. Backend still sees the final cost when
-  // we persist the cart at order time.
+  // We deliberately DO NOT call `validatePincode` here. That hits the
+  // legacy `pincodes_validation` table used by the web frontend and is
+  // not the source of truth for mobile — distance-from-store is. A pincode
+  // missing from that table would incorrectly block a checkout that is
+  // perfectly inside our delivery radius.
   useEffect(() => {
     const run = async () => {
       if (!cart?.cartId || !selectedAddress?.postcode) {
@@ -99,14 +109,6 @@ export const CheckoutScreen: React.FC = () => {
       setComputingShipping(true);
       setOutOfRange(false);
       try {
-        const pinValid = await catalogService.validatePincode(selectedAddress.postcode);
-        setPincodeOk(!!pinValid?.isDeliverable);
-        if (!pinValid?.isDeliverable) {
-          setShippingCost(undefined);
-          setDistanceKm(undefined);
-          return;
-        }
-
         // Resolve lat/lng — first from the address row, then via Google
         // forward-geocode if the row is missing them (legacy address, or
         // backend POST controller dropped them on save).
@@ -166,19 +168,29 @@ export const CheckoutScreen: React.FC = () => {
         }
 
         // Run the mobile-side calculation. Pure local math — no network.
+        // Pass the LIVE centers + rates from the store so multi-store
+        // pricing works correctly (nearest-of-N).
         const items = toArray(cart?.items) as Array<{ price: number; qty: number }>;
         const cartSubtotal =
           cart?.subtotal ?? items.reduce((s, i) => s + i.price * i.qty, 0);
-        const result = calculateShippingMobile(lat!, lng!, cartSubtotal);
+        const result = calculateShippingMobile(
+          lat!,
+          lng!,
+          cartSubtotal,
+          shippingConfig?.centers,
+          shippingConfig?.perKmRate,
+          shippingConfig?.freeAboveCartAmount,
+        );
         if (__DEV__) {
           // eslint-disable-next-line no-console
-          console.log('[checkout] shipping calc:', result);
+          console.log('[checkout] shipping calc:', result,
+            '· centers in store:', shippingConfig?.centers?.length ?? 0);
         }
 
         if (!result.applicable) {
           setShippingCost(undefined);
           setDistanceKm(result.distanceKm);
-          setCenterName(undefined);
+          setCenterName(result.centerName);
           setFreeDelivery(false);
           setOutOfRange(true);
           return;
@@ -187,7 +199,7 @@ export const CheckoutScreen: React.FC = () => {
         setShippingCost(result.cost);
         setFreeDelivery(result.isFree);
         setDistanceKm(result.distanceKm);
-        setCenterName(SHIPPING_CONFIG.warehouseName);
+        setCenterName(result.centerName);
         setOutOfRange(false);
       } catch (e: any) {
         if (__DEV__) {
@@ -205,8 +217,17 @@ export const CheckoutScreen: React.FC = () => {
     run();
     // `subtotal` is read inside but is derived from cart.items — listening
     // on cart.cartId is enough for our purposes (item changes refresh cart).
+    // Including shippingConfig so a late-arriving fetch from the splash
+    // screen re-runs the calc with the real centers.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cart?.cartId, selectedAddress?.postcode, selectedAddress?.customerAddressId, selectedAddress?.latitude, selectedAddress?.longitude]);
+  }, [
+    cart?.cartId,
+    selectedAddress?.postcode,
+    selectedAddress?.customerAddressId,
+    selectedAddress?.latitude,
+    selectedAddress?.longitude,
+    shippingConfig,
+  ]);
 
   if (loading) return <LoadingScreen />;
 
@@ -226,7 +247,7 @@ export const CheckoutScreen: React.FC = () => {
   }
 
   const subtotal = cart.subtotal || cart.items.reduce((s, i) => s + i.price * i.qty, 0);
-  const effectiveShipping = freeDelivery || subtotal >= SHIPPING_CONFIG.freeAboveCartAmount
+  const effectiveShipping = freeDelivery || subtotal >= (shippingConfig?.freeAboveCartAmount ?? SHIPPING_CONFIG.freeAboveCartAmount)
     ? 0
     : shippingCost ?? 0;
   const total = subtotal + effectiveShipping;
@@ -234,10 +255,6 @@ export const CheckoutScreen: React.FC = () => {
   const startPayment = async () => {
     if (!addressId) {
       showToast.error('Please select a delivery address');
-      return;
-    }
-    if (pincodeOk === false) {
-      showToast.error('We do not deliver to this pincode yet');
       return;
     }
     if (outOfRange) {
@@ -394,20 +411,11 @@ export const CheckoutScreen: React.FC = () => {
           </>
         )}
 
-        {pincodeOk === false ? (
-          <Card style={{ backgroundColor: '#fef2f2', marginTop: spacing.sm }} elevated={false}>
-            <Text variant="bodySmall" color={colors.error}>
-              We do not deliver to the selected pincode yet.
-            </Text>
-          </Card>
-        ) : null}
-
-        {/* Out-of-range banner — fires when the address has lat/lng but
-            falls outside the configured delivery radius (or the backend
-            otherwise couldn't compute a distance). Mobile is google-only,
-            so we block checkout in this case rather than fall through to
-            pincode pricing. */}
-        {pincodeOk !== false && outOfRange ? (
+        {/* Out-of-range banner — fires when the address falls outside the
+            delivery radius of EVERY active store (or Google couldn't
+            resolve coordinates for the typed address). This is the ONLY
+            serviceability gate on mobile — there's no pincode-table check. */}
+        {outOfRange ? (
           <Card style={{ backgroundColor: '#fef2f2', marginTop: spacing.sm }} elevated={false}>
             <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
               <Icon name="alert-circle" size={16} color={colors.error} style={{ marginTop: 2 }} />
@@ -464,7 +472,7 @@ export const CheckoutScreen: React.FC = () => {
             label="Shipping"
             value={
               effectiveShipping === 0
-                ? freeDelivery || subtotal >= SHIPPING_CONFIG.freeAboveCartAmount
+                ? freeDelivery || subtotal >= (shippingConfig?.freeAboveCartAmount ?? SHIPPING_CONFIG.freeAboveCartAmount)
                   ? 'FREE'
                   : formatINR(0)
                 : formatINR(effectiveShipping)
@@ -504,7 +512,7 @@ export const CheckoutScreen: React.FC = () => {
           size="lg"
           loading={processing}
           style={{ flex: 1.2 }}
-          disabled={!addressId || pincodeOk === false || outOfRange || computingShipping}
+          disabled={!addressId || outOfRange || computingShipping}
         />
       </View>
     </Container>
