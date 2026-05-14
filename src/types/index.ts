@@ -135,6 +135,22 @@ export interface ProductReview {
   updatedAt?: string;
 }
 
+/**
+ * Product video. Backend's `ShopController#getProduct` attaches these to
+ * the product as `productVideos` (an array). Each `videoUrl` is already
+ * normalised to YouTube *embed* format (https://www.youtube.com/embed/<id>)
+ * by the backend, regardless of how it was stored (watch?v=, shorts/,
+ * youtu.be/, etc.). We feed it straight into a WebView.
+ */
+export interface ProductVideo {
+  id?: number;
+  productId?: number;
+  /** Already in `https://www.youtube.com/embed/<id>` form (per backend). */
+  videoUrl?: string;
+  /** 1 = published. Other values may exist; treat anything non-1 as hidden. */
+  status?: number;
+}
+
 export interface Product {
   id?: number;
   productId?: number;
@@ -159,6 +175,8 @@ export interface Product {
   isNewArrival?: boolean;
   qtyOptions?: ProductQtyOption[];
   reviews?: ProductReview[];
+  /** YouTube videos for this product — already in embed format. */
+  productVideos?: ProductVideo[];
   rating?: number;
   totalReviews?: number;
   relatedProducts?: Product[];

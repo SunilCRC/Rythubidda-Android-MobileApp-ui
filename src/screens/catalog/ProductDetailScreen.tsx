@@ -16,6 +16,8 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Feather';
 import FastImage from 'react-native-fast-image';
+import WebView from 'react-native-webview';
+import Share from 'react-native-share';
 import { useQuery } from '@tanstack/react-query';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { catalogService } from '../../api/services';
@@ -47,12 +49,57 @@ type Props = NativeStackScreenProps<HomeStackParamList, 'ProductDetail'>;
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
-const HIGHLIGHTS: Array<{ icon: string; label: string }> = [
-  { icon: 'feather', label: 'Farm Fresh' },
-  { icon: 'sun', label: 'Naturally Grown' },
-  { icon: 'shield', label: 'No Preservatives' },
-  { icon: 'map-pin', label: 'Locally Sourced' },
-];
+/**
+ * Build an HTML page hosting a simple <iframe> YouTube embed —
+ * IDENTICAL to what the website (Rythubidda-UI/src/pages/ProductDetailNew.tsx)
+ * does. Combined with a `baseUrl` of `https://rythubidda.com` on the
+ * WebView, the embed runs in the SAME security context as the website,
+ * which is what YouTube expects.
+ *
+ * Critical detail: the `baseUrl` passed to the WebView must be the
+ * APP's origin (rythubidda.com), NOT youtube.com. If you set it to
+ * youtube.com, YouTube sees its own embed iframe loading inside a
+ * youtube.com top page → treats as unauthorized self-embed → returns
+ * error 152 ("Video unavailable"). The fix is to make the hosting
+ * page's origin DIFFERENT from the iframe's origin — exactly like a
+ * normal website embedding YouTube.
+ *
+ * Embed query params:
+ *   playsinline=1   — inline play on iOS (no forced fullscreen)
+ *   rel=0           — no related videos in end-card
+ *   modestbranding=1 — minimal YouTube branding
+ */
+function youtubeIframeHtml(videoId: string): string {
+  return `<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <style>
+      html, body { margin: 0; padding: 0; background: #000; height: 100%; overflow: hidden; }
+      .wrap { position: relative; width: 100%; height: 100%; }
+      .wrap iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <iframe
+        src="https://www.youtube.com/embed/${videoId}?playsinline=1&rel=0&modestbranding=1"
+        title="Product video"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+        allowfullscreen></iframe>
+    </div>
+  </body>
+</html>`;
+}
+
+// Video carousel sizing — peek effect: one full card visible with a
+// hint of the next so the user knows to swipe horizontally.
+const VIDEO_CARD_W = Math.floor(SCREEN_W * 0.85);
+const VIDEO_CARD_STRIDE = VIDEO_CARD_W + 12; // matches the gap below
+// Auto-advance interval. Longer than product cards (8 s vs ~3.5 s)
+// because videos invite watching, not glancing.
+const VIDEO_AUTO_SCROLL_MS = 8000;
 
 export const ProductDetailScreen: React.FC<Props> = ({ route, navigation }) => {
   const { productId } = route.params;
@@ -86,7 +133,6 @@ export const ProductDetailScreen: React.FC<Props> = ({ route, navigation }) => {
     string | number | undefined
   >();
   const [activeImage, setActiveImage] = useState(0);
-  const [wishlisted, setWishlisted] = useState(false);
   const [adding, setAdding] = useState(false);
   const [imageFailed, setImageFailed] = useState<Record<number, boolean>>({});
 
@@ -149,6 +195,66 @@ export const ProductDetailScreen: React.FC<Props> = ({ route, navigation }) => {
     selectedOption?.id ?? selectedOption?.qtyOptionId,
   );
   const cartQty = cartLine?.qty ?? 0;
+
+  // ── Health-benefit videos ──────────────────────────────────────────
+  // Derive the playable video list ABOVE the early return so the next
+  // useEffect (auto-scroll) sees a consistent hook order across renders.
+  const videos = useMemo(() => {
+    return (product?.productVideos ?? [])
+      .filter(v => v?.videoUrl && (v.status == null || v.status === 1))
+      .map(v => {
+        const m = v.videoUrl!.match(
+          /(?:embed\/|v=|youtu\.be\/|shorts\/)([\w-]{11})/,
+        );
+        const id = m ? m[1] : null;
+        return id ? { id, rowId: v.id } : null;
+      })
+      .filter((v): v is NonNullable<typeof v> => v !== null);
+  }, [product]);
+
+  // Horizontal carousel auto-scroll. Pauses while the user is touching
+  // the list (don't yank the screen out from under them).
+  const videoListRef = useRef<FlatList<{ id: string; rowId?: number }>>(null);
+  const videoIndexRef = useRef(0);
+  const videoUserTouchingRef = useRef(false);
+
+  useEffect(() => {
+    if (videos.length < 2) return;
+    const timer = setInterval(() => {
+      if (videoUserTouchingRef.current) return;
+      const next = (videoIndexRef.current + 1) % videos.length;
+      videoIndexRef.current = next;
+      try {
+        videoListRef.current?.scrollToOffset({
+          offset: next * VIDEO_CARD_STRIDE,
+          animated: true,
+        });
+      } catch {
+        // list not laid out yet — ignore
+      }
+    }, VIDEO_AUTO_SCROLL_MS);
+    return () => clearInterval(timer);
+  }, [videos.length]);
+
+  // Share — uses react-native-share to open the native share sheet.
+  const handleShare = useCallback(async () => {
+    if (!product) return;
+    haptics.tap();
+    const id = product.id ?? product.productId;
+    const url = `${APP_CONFIG.WEB_URL}/products/${id}`;
+    try {
+      await Share.open({
+        title: `${product.name} · Rythu Bidda`,
+        message:
+          `Check out ${product.name} on Rythu Bidda — ` +
+          `${formatINR(product.price)}\n${url}`,
+        url,
+        subject: `Rythu Bidda — ${product.name}`,
+      });
+    } catch {
+      // User cancelled the share sheet — silently ignore.
+    }
+  }, [product]);
 
   const handleAddToCart = useCallback(async () => {
     if (adding || !product) return;
@@ -252,7 +358,7 @@ export const ProductDetailScreen: React.FC<Props> = ({ route, navigation }) => {
             )}
           />
 
-          {/* Floating back + wishlist — sits below the status bar */}
+          {/* Floating back + share — sits below the status bar */}
           <View style={[styles.floatingTop, { top: insets.top + spacing.sm }]}>
             <Pressable
               onPress={() => navigation.goBack()}
@@ -262,31 +368,14 @@ export const ProductDetailScreen: React.FC<Props> = ({ route, navigation }) => {
             >
               <Icon name="arrow-left" size={20} color={colors.textPrimary} />
             </Pressable>
-            <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-              <Pressable
-                onPress={() => {
-                  setWishlisted(w => !w);
-                  haptics.tap();
-                }}
-                style={styles.iconBubble}
-                android_ripple={{ color: colors.pressed, borderless: true, radius: 22 }}
-                hitSlop={6}
-              >
-                <Icon
-                  name="heart"
-                  size={20}
-                  color={wishlisted ? colors.error : colors.textPrimary}
-                />
-              </Pressable>
-              <Pressable
-                onPress={() => haptics.tap()}
-                style={styles.iconBubble}
-                android_ripple={{ color: colors.pressed, borderless: true, radius: 22 }}
-                hitSlop={6}
-              >
-                <Icon name="share-2" size={20} color={colors.textPrimary} />
-              </Pressable>
-            </View>
+            <Pressable
+              onPress={handleShare}
+              style={styles.iconBubble}
+              android_ripple={{ color: colors.pressed, borderless: true, radius: 22 }}
+              hitSlop={6}
+            >
+              <Icon name="share-2" size={20} color={colors.textPrimary} />
+            </Pressable>
           </View>
 
           {/* Discount pill */}
@@ -333,8 +422,8 @@ export const ProductDetailScreen: React.FC<Props> = ({ route, navigation }) => {
           {product.shortDescription ? (
             <Text
               variant="bodySmall"
-              weight="600"
-              color={colors.textSecondary}
+              weight="700"
+              color={colors.textPrimary}
               style={{ marginTop: 4 }}
             >
               {product.shortDescription}
@@ -502,35 +591,70 @@ export const ProductDetailScreen: React.FC<Props> = ({ route, navigation }) => {
           </View>
         ) : null}
 
-        {/* ===== Highlights ===== */}
-        <View style={styles.section}>
-          <Text
-            variant="h6"
-            weight="700"
-            color={colors.textPrimary}
-            style={{ marginBottom: spacing.sm }}
-          >
-            Product Highlights
-          </Text>
-          <View style={styles.highlightsRow}>
-            {HIGHLIGHTS.map(h => (
-              <View key={h.label} style={styles.highlightChip}>
-                <View style={styles.highlightIcon}>
-                  <Icon name={h.icon} size={16} color={colors.primary} />
+        {/* ===== Health benefit videos =====
+            Horizontal auto-scrolling carousel. Each card plays inline via
+            a WebView hosting YouTube's iframe embed. `baseUrl` is set to
+            `rythubidda.com` (the app's pretend-origin) so YouTube sees
+            us as a normal third-party embed — same shape as the website.
+            See `youtubeIframeHtml()` at the top of this file. */}
+        {videos.length > 0 ? (
+          <View style={styles.section}>
+            <Text
+              variant="h6"
+              weight="700"
+              color={colors.textPrimary}
+              style={{ marginBottom: spacing.sm }}
+            >
+              Health Benefit Videos
+            </Text>
+            <FlatList
+              ref={videoListRef}
+              data={videos}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              keyExtractor={(v, i) => `vid-${v.rowId ?? v.id ?? i}`}
+              snapToInterval={VIDEO_CARD_STRIDE}
+              decelerationRate="fast"
+              onScrollBeginDrag={() => {
+                videoUserTouchingRef.current = true;
+              }}
+              onScrollEndDrag={() => {
+                // Resume auto-advance ~3 s after the user lets go.
+                setTimeout(() => {
+                  videoUserTouchingRef.current = false;
+                }, 3000);
+              }}
+              onMomentumScrollEnd={e => {
+                videoIndexRef.current = Math.round(
+                  e.nativeEvent.contentOffset.x / VIDEO_CARD_STRIDE,
+                );
+              }}
+              contentContainerStyle={styles.videoCarousel}
+              renderItem={({ item }) => (
+                <View style={styles.videoFrame}>
+                  <WebView
+                    source={{
+                      html: youtubeIframeHtml(item.id),
+                      baseUrl: 'https://rythubidda.com',
+                    }}
+                    style={styles.video}
+                    userAgent="Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+                    thirdPartyCookiesEnabled
+                    originWhitelist={['*']}
+                    javaScriptEnabled
+                    domStorageEnabled
+                    allowsFullscreenVideo
+                    allowsInlineMediaPlayback
+                    mediaPlaybackRequiresUserAction={false}
+                    setSupportMultipleWindows={false}
+                    mixedContentMode="always"
+                    androidLayerType="hardware"
+                  />
                 </View>
-                <Text
-                  variant="caption"
-                  weight="700"
-                  color={colors.textPrimary}
-                  align="center"
-                  style={{ marginTop: 4 }}
-                >
-                  {h.label}
-                </Text>
-              </View>
-            ))}
+              )}
+            />
           </View>
-        </View>
+        ) : null}
 
         {/* ===== Details accordions ===== */}
         <View style={styles.section}>
@@ -540,20 +664,20 @@ export const ProductDetailScreen: React.FC<Props> = ({ route, navigation }) => {
               icon="file-text"
               defaultOpen
             >
-              <Text variant="body" weight="500" color={colors.textSecondary}>
+              <Text variant="body" weight="600" color={colors.textPrimary}>
                 {product.description}
               </Text>
             </AccordionItem>
           ) : null}
           <AccordionItem title="Storage Instructions" icon="archive">
-            <Text variant="body" weight="500" color={colors.textSecondary}>
+            <Text variant="body" weight="600" color={colors.textPrimary}>
               Store in a cool, dry place away from direct sunlight. Transfer to an
               airtight container after opening. Keeps best for up to 6 months when
               stored properly.
             </Text>
           </AccordionItem>
           <AccordionItem title="Farmer / Source Info" icon="map">
-            <Text variant="body" weight="500" color={colors.textSecondary}>
+            <Text variant="body" weight="600" color={colors.textPrimary}>
               Sourced directly from small farms across South India. Every batch is
               quality-checked before being packed and shipped to your door.
             </Text>
@@ -605,8 +729,8 @@ export const ProductDetailScreen: React.FC<Props> = ({ route, navigation }) => {
                 {r.comment || r.message ? (
                   <Text
                     variant="bodySmall"
-                    weight="500"
-                    color={colors.textSecondary}
+                    weight="600"
+                    color={colors.textPrimary}
                     style={{ marginTop: 2 }}
                   >
                     {r.comment || r.message}
@@ -819,27 +943,26 @@ const styles = StyleSheet.create({
   variantPillDisabled: {
     opacity: 0.4,
   },
-  highlightsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: spacing.sm,
+  // Health-benefit videos carousel
+  videoCarousel: {
+    // small leading padding so the first card isn't flush against the edge
+    paddingLeft: 2,
+    paddingRight: spacing.base,
+    gap: 12,
   },
-  highlightChip: {
-    flex: 1,
-    alignItems: 'center',
-    backgroundColor: colors.tintSoft,
-    paddingVertical: spacing.base,
-    paddingHorizontal: spacing.xs,
+  // YouTube iframe WebView — fixed card width for snap-to-interval
+  // horizontal carousel. 16:9 aspect (height derived from VIDEO_CARD_W).
+  videoFrame: {
+    width: VIDEO_CARD_W,
+    height: Math.round(VIDEO_CARD_W * (9 / 16)),
     borderRadius: radius.lg,
-  },
-  highlightIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
+    overflow: 'hidden',
+    backgroundColor: '#000',
     ...shadows.sm,
+  },
+  video: {
+    flex: 1,
+    backgroundColor: '#000',
   },
   stickyInner: {
     flexDirection: 'row',

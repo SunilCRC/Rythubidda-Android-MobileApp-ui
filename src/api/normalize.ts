@@ -5,6 +5,7 @@ import type {
   Product,
   ProductQtyOption,
   ProductReview,
+  ProductVideo,
 } from '../types';
 
 /**
@@ -123,6 +124,23 @@ export function normalizeProduct(raw: any): Product {
     createdAt: r.createdAt,
   }));
 
+  // Backend's ShopController#getProduct attaches YouTube embed URLs as
+  // `productVideos: [{ id, productId, videoUrl, status }]`. The normalize
+  // function builds a fresh Product object from an allowlist, so without
+  // this block the videos would silently disappear before reaching the
+  // screen even though they're present on the wire.
+  const videosRaw: any[] = Array.isArray(raw.productVideos)
+    ? raw.productVideos
+    : [];
+  const productVideos: ProductVideo[] = videosRaw
+    .map(v => ({
+      id: typeof v?.id === 'number' ? v.id : undefined,
+      productId: typeof v?.productId === 'number' ? v.productId : undefined,
+      videoUrl: typeof v?.videoUrl === 'string' ? v.videoUrl : undefined,
+      status: typeof v?.status === 'number' ? v.status : undefined,
+    }))
+    .filter(v => !!v.videoUrl);
+
   return {
     id: raw.id ?? raw.productId,
     productId: raw.productId ?? raw.id,
@@ -158,6 +176,7 @@ export function normalizeProduct(raw: any): Product {
     isNewArrival: !!(raw.isNewArrival ?? raw.newArrival ?? raw.newArraival),
     qtyOptions,
     reviews,
+    productVideos,
     rating: raw.rating ?? raw.averageRating ?? 0,
     totalReviews: raw.totalReviews ?? raw.totalRatings ?? reviews.length,
     relatedProducts: Array.isArray(raw.relatedProducts)
