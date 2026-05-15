@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
+  Dimensions,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -10,6 +10,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { confirm } from '../../utils/confirm';
 import Icon from 'react-native-vector-icons/Feather';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import {
@@ -22,11 +23,12 @@ import {
 import { Container } from '../../components/layout/Container';
 import { ScreenHeader } from '../../components/layout/ScreenHeader';
 import { LocationMapPreview } from '../../components/LocationMapPreview';
-import { addressService, catalogService } from '../../api/services';
+import { addressService } from '../../api/services';
 import { colors } from '../../theme/colors';
 import { radius, shadows, spacing } from '../../theme/spacing';
 import { fonts, fontSizes } from '../../theme/typography';
 import {
+  useDeliveryCenterStore,
   useIsAuthenticated,
   useLocationStore,
   type DeliveryLocation,
@@ -37,7 +39,8 @@ import {
   requestLocationPermission,
 } from '../../utils/locationPermissions';
 import { getCurrentLocation } from '../../utils/geolocation';
-import { reverseGeocode } from '../../utils/googleGeocode';
+import { forwardGeocode, reverseGeocode } from '../../utils/googleGeocode';
+import { calculateShippingMobile } from '../../utils/mobileShipping';
 import {
   autocomplete as gAutocomplete,
   createSessionToken,
@@ -50,6 +53,11 @@ import { toArray } from '../../utils/format';
 import { APP_CONFIG } from '../../constants/config';
 import type { LocationStackParamList } from '../../navigation/types';
 import type { CustomerAddress } from '../../types';
+
+// Tall map (Zepto/Swiggy style) — ~42% of viewport, clamped so it
+// always feels like a "map screen", never a tiny preview.
+const SCREEN_H = Dimensions.get('window').height;
+const MAP_H = Math.max(300, Math.min(440, Math.round(SCREEN_H * 0.42)));
 
 type Props = NativeStackScreenProps<LocationStackParamList, 'LocationPicker'>;
 
@@ -79,6 +87,40 @@ export const LocationPickerScreen: React.FC<Props> = ({
   const recents = useLocationStore(s => s.recents);
   const isAuth = useIsAuthenticated();
   const inputRef = useRef<TextInput>(null);
+
+  // Live delivery-center config (centers + global rate) hydrated on
+  // splash. We use this — NOT the legacy `pincodes_validation` table —
+  // to decide if a location is serviceable. Source of truth is "is the
+  // customer inside the radius of any active delivery_center row?".
+  const shippingConfig = useDeliveryCenterStore(s => s.config);
+
+  /**
+   * Pure serviceability check by distance — mirrors what CheckoutScreen
+   * does. Returns `serviceable=undefined` when shipping config hasn't
+   * hydrated yet (treat as "unknown — let the user proceed; checkout
+   * will recheck"). Returns `false` when the nearest active center is
+   * farther than its maxRadiusKm. Returns `true` otherwise, alongside
+   * the distance and store name (handy for future UX).
+   */
+  const checkServiceableByDistance = (lat: number, lng: number) => {
+    if (!shippingConfig || shippingConfig.centers.length === 0) {
+      // Config not hydrated → don't block; checkout recomputes anyway.
+      return { serviceable: undefined as boolean | undefined, distanceKm: 0, centerName: '' };
+    }
+    const r = calculateShippingMobile(
+      lat,
+      lng,
+      0,
+      shippingConfig.centers,
+      shippingConfig.perKmRate,
+      shippingConfig.freeAboveCartAmount,
+    );
+    return {
+      serviceable: r.applicable,
+      distanceKm: r.distanceKm,
+      centerName: r.centerName,
+    };
+  };
 
   // Autocomplete state
   const [query, setQuery] = useState('');
@@ -174,18 +216,13 @@ export const LocationPickerScreen: React.FC<Props> = ({
         return;
       }
       const d = r.details;
-      // Validate serviceability before committing — same flow as GPS.
-      let serviceable: boolean | undefined;
-      try {
-        const v = await catalogService.validatePincode(d.pincode!);
-        serviceable = !!v?.isDeliverable;
-      } catch {
-        serviceable = undefined;
-      }
+      // Distance-based serviceability — uses the live delivery_center
+      // list, NOT the legacy pincodes_validation table.
+      const { serviceable } = checkServiceableByDistance(d.latitude, d.longitude);
       if (serviceable === false) {
         showToast.error(
           "We don't deliver here yet",
-          'Please pick a different address.',
+          "You're outside our delivery radius. Pick a closer address.",
         );
         return;
       }
@@ -224,14 +261,15 @@ export const LocationPickerScreen: React.FC<Props> = ({
         status = await requestLocationPermission();
       }
       if (status === 'blocked') {
-        Alert.alert(
-          'Location blocked',
-          "We can't access your location. Open Settings to enable it, or enter pincode manually below.",
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Open Settings', onPress: () => openAppSettings() },
-          ],
-        );
+        const ok = await confirm({
+          title: 'Location is blocked',
+          message:
+            "We can't access your location. Open Settings to enable it, or enter your pincode manually below.",
+          confirmText: 'Open Settings',
+          cancelText: 'Not now',
+          icon: 'map-pin',
+        });
+        if (ok) openAppSettings();
         return;
       }
       if (status === 'unavailable') {
@@ -258,7 +296,9 @@ export const LocationPickerScreen: React.FC<Props> = ({
         return;
       }
 
-      await resolveAndPreview(gps.coords.latitude, gps.coords.longitude);
+      await resolveAndPreview(gps.coords.latitude, gps.coords.longitude, {
+        silent: false,
+      });
     } catch {
       showToast.error('Could not detect location', 'Try again or enter pincode.');
     } finally {
@@ -267,11 +307,26 @@ export const LocationPickerScreen: React.FC<Props> = ({
   };
 
   /**
-   * Shared between initial GPS detect and pin-drag refinement: takes a
-   * lat/lng, runs Google reverse-geocode + serviceability check, and
-   * updates the preview card.
+   * Shared between initial GPS detect and pin-drag refinement.
+   *
+   * `opts.silent` controls error noise:
+   *   • silent=false (default for "Use current location") — shows toasts
+   *     for every failure mode, including no_result/network. The user
+   *     just tapped a button; they need feedback.
+   *   • silent=true (used by pin-drag) — only shows toasts for ACTIONABLE
+   *     configuration errors (missing/rejected key, quota exceeded). For
+   *     no_result / network / timeout we keep the previous resolved
+   *     address visible and let the user pan again. This stops the
+   *     "Couldn't read address" red toast from spamming during normal
+   *     map exploration when the pin lands briefly on water / a forest /
+   *     any spot without a postal_code component.
    */
-  const resolveAndPreview = async (lat: number, lng: number) => {
+  const resolveAndPreview = async (
+    lat: number,
+    lng: number,
+    opts?: { silent?: boolean },
+  ) => {
+    const silent = opts?.silent ?? false;
     const geo = await reverseGeocode(lat, lng);
     if (!geo.ok) {
       if (geo.error === 'key_missing') {
@@ -284,18 +339,27 @@ export const LocationPickerScreen: React.FC<Props> = ({
           'Google rejected the key',
           'Check Cloud Console: enable Geocoding API + match SHA-1.',
         );
-      } else {
-        showToast.error("Couldn't read address", 'Try again or enter pincode below.');
+      } else if (geo.error === 'over_limit') {
+        showToast.error('Map quota exceeded', 'Try again in a moment.');
+      } else if (!silent) {
+        // Soft, non-alarming wording — no_result almost always means
+        // "this exact pixel has no address; nudge the map".
+        if (geo.error === 'no_result') {
+          showToast.info(
+            'No address at that exact spot',
+            'Move the map slightly and try again.',
+          );
+        } else {
+          showToast.error("Couldn't read address", 'Try again or enter pincode below.');
+        }
       }
       return;
     }
-    let serviceable: boolean | undefined;
-    try {
-      const v = await catalogService.validatePincode(geo.address.pincode);
-      serviceable = !!v?.isDeliverable;
-    } catch {
-      serviceable = undefined;
-    }
+    // Distance-based serviceability against the active delivery_centers.
+    const { serviceable } = checkServiceableByDistance(
+      geo.address.latitude,
+      geo.address.longitude,
+    );
     setDetectedPreview({
       pincode: geo.address.pincode,
       city: geo.address.city,
@@ -312,9 +376,15 @@ export const LocationPickerScreen: React.FC<Props> = ({
     haptics.tap();
   };
 
-  const onPinDrag = async (c: { latitude: number; longitude: number }) => {
-    // User dragged the pin — re-geocode the new spot.
-    await resolveAndPreview(c.latitude, c.longitude);
+  // Debounce pin-drag geocodes — every map-settle event fires this, and
+  // a user panning around the map shouldn't trigger 5 API calls + 5
+  // toasts in 2 seconds. 350ms feels instant after the user lets go.
+  const panDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onPinDrag = (c: { latitude: number; longitude: number }) => {
+    if (panDebounceRef.current) clearTimeout(panDebounceRef.current);
+    panDebounceRef.current = setTimeout(() => {
+      void resolveAndPreview(c.latitude, c.longitude, { silent: true });
+    }, 350);
   };
 
   const acceptDetected = async () => {
@@ -367,17 +437,41 @@ export const LocationPickerScreen: React.FC<Props> = ({
     if (!isPincodeQuery) return;
     setPincodeValidating(true);
     try {
-      const v = await catalogService.validatePincode(trimmed);
-      if (!v?.isDeliverable) {
+      // Forward-geocode the pincode → lat/lng → distance check against
+      // active delivery_centers. This replaces the legacy
+      // pincodes_validation lookup so the gating is consistent across
+      // every entry point (GPS, autocomplete, manual pincode).
+      const fg = await forwardGeocode(trimmed);
+      if (!fg.ok) {
+        showToast.error(
+          "Couldn't locate that pincode",
+          'Try the search box above or use current location.',
+        );
+        return;
+      }
+      const { serviceable } = checkServiceableByDistance(
+        fg.address.latitude,
+        fg.address.longitude,
+      );
+      if (serviceable === false) {
         showToast.error(
           "We don't deliver here yet",
-          'Please try a different pincode.',
+          "You're outside our delivery radius. Try a closer pincode.",
         );
         return;
       }
       const loc: DeliveryLocation = {
         pincode: trimmed,
+        city: fg.address.city,
+        state: fg.address.state,
+        area: fg.address.area,
+        formatted: fg.address.formatted,
+        latitude: fg.address.latitude,
+        longitude: fg.address.longitude,
         source: 'manual',
+        // We already returned early on `serviceable === false` above, so
+        // here it's either `true` or `undefined` (config not hydrated).
+        // Treat the unknown case as serviceable — checkout recomputes.
         isServiceable: true,
         capturedAt: new Date().toISOString(),
       };
@@ -425,6 +519,9 @@ export const LocationPickerScreen: React.FC<Props> = ({
         <ScrollView
           contentContainerStyle={styles.scroll}
           keyboardShouldPersistTaps="handled"
+          // Android: lets the nested MapView consume vertical pans
+          // instead of the parent ScrollView swallowing them.
+          nestedScrollEnabled
         >
           {/* ── Search box (Google Places autocomplete + 6-digit pincode) ── */}
           <View style={styles.searchBox}>
@@ -544,94 +641,86 @@ export const LocationPickerScreen: React.FC<Props> = ({
             )}
           </Pressable>
 
-          {/* ── Detected preview (with map + draggable pin) ── */}
+          {/* ── Detected preview ── BIG map (Zepto/Swiggy style) ──── */}
           {detectedPreview &&
           typeof detectedPreview.latitude === 'number' &&
           typeof detectedPreview.longitude === 'number' ? (
-            <Card style={styles.detectedCard}>
-              <View style={styles.detectedHeader}>
-                <Icon name="map-pin" size={16} color={colors.primary} />
-                <Text
-                  variant="bodyBold"
-                  weight="700"
-                  color={colors.textPrimary}
-                  style={{ marginLeft: spacing.xs }}
-                >
-                  Drag the pin to refine
-                </Text>
-              </View>
-
+            <View style={styles.detectedBlock}>
+              {/* Edge-to-edge map dominates this block. The map itself */}
+              {/* shows a centred pin overlay + locate-me FAB.           */}
               <LocationMapPreview
                 latitude={detectedPreview.latitude}
                 longitude={detectedPreview.longitude}
                 onCoordinateChange={onPinDrag}
                 draggable
-                style={{ marginTop: spacing.sm }}
+                height={MAP_H}
+                showLocateMe
+                onLocateMe={handleDetect}
+                style={styles.detectedMap}
               />
 
-              <Text
-                variant="bodyBold"
-                weight="700"
-                color={colors.textPrimary}
-                style={{ marginTop: spacing.sm }}
-              >
-                {detectedPreview.area ?? detectedPreview.city ?? '—'}, {detectedPreview.pincode}
-              </Text>
-              {detectedPreview.formatted ? (
-                <Text
-                  variant="caption"
-                  color={colors.textSecondary}
-                  weight="500"
-                  numberOfLines={2}
-                  style={{ marginTop: 2 }}
-                >
-                  {detectedPreview.formatted}
-                </Text>
-              ) : null}
-
-              {detectedPreview.isServiceable === false ? (
-                <View style={styles.notServiceable}>
-                  <Icon name="alert-circle" size={14} color={colors.error} />
+              <View style={styles.detectedInfo}>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <Icon name="map-pin" size={16} color={colors.primary} />
                   <Text
-                    variant="caption"
+                    variant="bodyBold"
                     weight="700"
-                    color={colors.error}
-                    style={{ marginLeft: 4 }}
+                    color={colors.textPrimary}
+                    style={{ marginLeft: spacing.xs }}
                   >
-                    We don't deliver here yet
+                    {detectedPreview.area ?? detectedPreview.city ?? 'Selected location'}
+                    {detectedPreview.pincode ? `, ${detectedPreview.pincode}` : ''}
                   </Text>
                 </View>
-              ) : detectedPreview.isServiceable === true ? (
-                <View style={styles.serviceable}>
-                  <Icon name="check-circle" size={14} color={colors.success} />
+                {detectedPreview.formatted ? (
                   <Text
                     variant="caption"
-                    weight="700"
-                    color={colors.success}
-                    style={{ marginLeft: 4 }}
+                    color={colors.textSecondary}
+                    weight="500"
+                    numberOfLines={2}
+                    style={{ marginTop: 4 }}
                   >
-                    We deliver here
+                    {detectedPreview.formatted}
                   </Text>
-                </View>
-              ) : null}
+                ) : null}
 
-              <View style={styles.detectedActions}>
-                <Button
-                  title="Use this"
-                  onPress={acceptDetected}
-                  disabled={detectedPreview.isServiceable === false}
-                  size="md"
-                  style={{ flex: 1 }}
-                />
-                <Button
-                  title="Re-detect"
-                  onPress={handleDetect}
-                  variant="outline"
-                  size="md"
-                  style={{ flex: 1, marginLeft: spacing.sm }}
-                />
+                {detectedPreview.isServiceable === false ? (
+                  <View style={styles.notServiceable}>
+                    <Icon name="alert-circle" size={14} color={colors.error} />
+                    <Text
+                      variant="caption"
+                      weight="700"
+                      color={colors.error}
+                      style={{ marginLeft: 4 }}
+                    >
+                      Outside our delivery radius
+                    </Text>
+                  </View>
+                ) : detectedPreview.isServiceable === true ? (
+                  <View style={styles.serviceable}>
+                    <Icon name="check-circle" size={14} color={colors.success} />
+                    <Text
+                      variant="caption"
+                      weight="700"
+                      color={colors.success}
+                      style={{ marginLeft: 4 }}
+                    >
+                      We deliver here
+                    </Text>
+                  </View>
+                ) : null}
+
+                <View style={styles.detectedActions}>
+                  <Button
+                    title="Use this location"
+                    onPress={acceptDetected}
+                    disabled={detectedPreview.isServiceable === false}
+                    size="md"
+                    fullWidth
+                  />
+                </View>
               </View>
-            </Card>
+            </View>
           ) : null}
 
           {/* ── Recently used ── */}
@@ -806,16 +895,25 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  detectedCard: {
+  // The detected-location block has TWO halves: a tall edge-to-edge map
+  // up top, and an info/action panel below. The whole thing reads as one
+  // card thanks to the matching border/radius/shadow.
+  detectedBlock: {
     marginTop: spacing.base,
-    backgroundColor: colors.tintSoft,
+    borderRadius: radius.lg,
+    overflow: 'hidden',
     borderWidth: 1,
     borderColor: colors.primary,
+    backgroundColor: colors.surface,
+    ...shadows.sm,
   },
-  detectedHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: spacing.xs,
+  detectedMap: {
+    borderRadius: 0,
+    borderWidth: 0,
+  },
+  detectedInfo: {
+    padding: spacing.base,
+    backgroundColor: colors.tintSoft,
   },
   serviceable: {
     flexDirection: 'row',

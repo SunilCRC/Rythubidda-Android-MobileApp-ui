@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
+  Dimensions,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -10,6 +10,12 @@ import {
   TextInput,
   View,
 } from 'react-native';
+
+// Tall map (Zepto/Swiggy style) — ~42% of viewport, clamped so it
+// always feels like a "map screen", never a tiny preview.
+const SCREEN_H = Dimensions.get('window').height;
+const MAP_H = Math.max(320, Math.min(460, Math.round(SCREEN_H * 0.42)));
+import { confirm } from '../../utils/confirm';
 import Icon from 'react-native-vector-icons/Feather';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -170,14 +176,17 @@ export const AddEditAddressScreen: React.FC<Props> = ({ route, navigation }) => 
       }
       if (status === 'blocked') {
         if (!silent) {
-          Alert.alert(
-            'Location blocked',
-            "We can't access your location. Open Settings to enable it, or search for your address.",
-            [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'Open Settings', onPress: () => openAppSettings() },
-            ],
-          );
+          // Fire-and-forget — don't block the GPS-fallback below.
+          confirm({
+            title: 'Location is blocked',
+            message:
+              "We can't access your location. Open Settings to enable it, or search for your address manually.",
+            confirmText: 'Open Settings',
+            cancelText: 'Not now',
+            icon: 'map-pin',
+          }).then(ok => {
+            if (ok) openAppSettings();
+          });
         }
         // Fall back to warehouse so the map still has SOMETHING to show.
         if (!pinCoords) {
@@ -223,6 +232,13 @@ export const AddEditAddressScreen: React.FC<Props> = ({ route, navigation }) => 
    * Set pin → reverse-geocode → update the "Detected location" card +
    * mirror to the global delivery-location store (so the home pill
    * updates immediately).
+   *
+   * Soft-fail policy: when the geocode comes back empty (`no_result` —
+   * the user landed on water / a forest / a spot without postal_code) or
+   * a transient network blip, we keep the previously resolved address on
+   * screen and silently bail. Only ACTIONABLE configuration errors
+   * (missing/rejected key, quota exceeded) raise a toast — those need
+   * the developer's attention, not the user's.
    */
   const applyCoordinates = async (lat: number, lng: number) => {
     setPinCoords({ latitude: lat, longitude: lng });
@@ -235,7 +251,10 @@ export const AddEditAddressScreen: React.FC<Props> = ({ route, navigation }) => 
             'Maps key issue',
             'Check Cloud Console: enable Geocoding API and verify SHA-1.',
           );
+        } else if (geo.error === 'over_limit') {
+          showToast.error('Map quota exceeded', 'Try again in a moment.');
         }
+        // no_result / network / timeout → keep previous `resolved` on screen.
         return;
       }
       setResolved(geo.address);
@@ -256,6 +275,21 @@ export const AddEditAddressScreen: React.FC<Props> = ({ route, navigation }) => 
     } finally {
       setResolving(false);
     }
+  };
+
+  // Debounced version of applyCoordinates for the pan-driven path.
+  // Every map-settle event would otherwise fire a fresh geocode; on
+  // rapid pans that wastes API calls. 350ms feels instant after the
+  // user lifts their finger.
+  const panDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const applyCoordinatesDebounced = (lat: number, lng: number) => {
+    // Update the pin position immediately so the map doesn't snap back
+    // — only the geocode is debounced.
+    setPinCoords({ latitude: lat, longitude: lng });
+    if (panDebounceRef.current) clearTimeout(panDebounceRef.current);
+    panDebounceRef.current = setTimeout(() => {
+      void applyCoordinates(lat, lng);
+    }, 350);
   };
 
   // ────────────────────────────────────────────────────────────────────
@@ -364,22 +398,31 @@ export const AddEditAddressScreen: React.FC<Props> = ({ route, navigation }) => 
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ flex: 1 }}
       >
-        <ScrollView
-          contentContainerStyle={styles.scroll}
-          keyboardShouldPersistTaps="handled"
-        >
-          {/* ── Map (always visible, full-width) ───────────────────────── */}
-          {pinCoords ? (
+        {/* ── Map lives ABOVE the ScrollView ──────────────────────────── */}
+        {/* Putting the map outside the scroll view is essential — RN     */}
+        {/* ScrollView would otherwise steal the vertical-pan gesture and */}
+        {/* the user couldn't move the map north/south. Now the map gets  */}
+        {/* every touch, exactly like Zepto / Swiggy.                     */}
+        {pinCoords ? (
+          <View style={styles.mapHeader}>
             <LocationMapPreview
               latitude={pinCoords.latitude}
               longitude={pinCoords.longitude}
               draggable
-              height={200}
-              onCoordinateChange={c => void applyCoordinates(c.latitude, c.longitude)}
-              style={{ marginBottom: spacing.sm }}
+              height={MAP_H}
+              loading={resolving}
+              showLocateMe
+              onLocateMe={() => detectFromGps(false)}
+              onCoordinateChange={c => applyCoordinatesDebounced(c.latitude, c.longitude)}
+              style={{ borderRadius: 0, borderWidth: 0 }}
             />
-          ) : null}
+          </View>
+        ) : null}
 
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+        >
           {/* ── Search bar (Places autocomplete) ───────────────────────── */}
           <View style={styles.searchBox}>
             <Icon name="search" size={18} color={colors.primary} />
@@ -559,6 +602,15 @@ export const AddEditAddressScreen: React.FC<Props> = ({ route, navigation }) => 
 const styles = StyleSheet.create({
   scroll: { padding: spacing.base, paddingBottom: spacing['3xl'] },
   row: { flexDirection: 'row' },
+
+  // The map sits flush with the screen edges (no border, no card chrome)
+  // so it reads as a "header" the user pans, not a widget. Bottom border
+  // separates it from the scrollable form below.
+  mapHeader: {
+    borderBottomWidth: 1,
+    borderBottomColor: colors.divider,
+    backgroundColor: colors.surface,
+  },
 
   searchBox: {
     flexDirection: 'row',

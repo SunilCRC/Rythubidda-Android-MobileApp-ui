@@ -4,11 +4,12 @@ import { Platform, StatusBar, StyleSheet, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import Toast, { BaseToast, ErrorToast } from 'react-native-toast-message';
+import Toast from 'react-native-toast-message';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { ErrorBoundary } from './src/components/common';
+import { BrandToast } from './src/components/feedback/BrandToast';
+import { ConfirmHost } from './src/components/feedback/ConfirmHost';
 import { colors } from './src/theme/colors';
-import { fonts } from './src/theme/typography';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -20,30 +21,20 @@ const queryClient = new QueryClient({
   },
 });
 
+/**
+ * Brand toast renderer config — replaces the default
+ * BaseToast/ErrorToast widgets from react-native-toast-message with our
+ * own card (rounded, icon-well, soft shadow) defined in BrandToast.tsx.
+ */
 const toastConfig = {
   success: (props: any) => (
-    <BaseToast
-      {...props}
-      style={{ borderLeftColor: colors.success, backgroundColor: colors.surface }}
-      text1Style={{ fontFamily: fonts.regular, fontSize: 14, fontWeight: '600', color: colors.textPrimary }}
-      text2Style={{ fontFamily: fonts.regular, fontSize: 12, color: colors.textSecondary }}
-    />
+    <BrandToast variant="success" text1={props.text1} text2={props.text2} />
   ),
   error: (props: any) => (
-    <ErrorToast
-      {...props}
-      style={{ borderLeftColor: colors.error, backgroundColor: colors.surface }}
-      text1Style={{ fontFamily: fonts.regular, fontSize: 14, fontWeight: '600', color: colors.textPrimary }}
-      text2Style={{ fontFamily: fonts.regular, fontSize: 12, color: colors.textSecondary }}
-    />
+    <BrandToast variant="error" text1={props.text1} text2={props.text2} />
   ),
   info: (props: any) => (
-    <BaseToast
-      {...props}
-      style={{ borderLeftColor: colors.info, backgroundColor: colors.surface }}
-      text1Style={{ fontFamily: fonts.regular, fontSize: 14, fontWeight: '600', color: colors.textPrimary }}
-      text2Style={{ fontFamily: fonts.regular, fontSize: 12, color: colors.textSecondary }}
-    />
+    <BrandToast variant="info" text1={props.text1} text2={props.text2} />
   ),
 };
 
@@ -67,6 +58,9 @@ const App: React.FC = () => {
                 translucent={false}
               />
               <RootNavigator />
+              {/* Brand confirm dialog — replaces native Alert.alert */}
+              <ConfirmHost />
+              {/* Toasts mount LAST so they overlay everything else */}
               <Toast config={toastConfig} topOffset={50} />
             </View>
           </ErrorBoundary>

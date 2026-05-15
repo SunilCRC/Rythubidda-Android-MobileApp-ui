@@ -43,8 +43,15 @@ export const authService = {
 
   getProfile: () => apiGet<Customer>(ENDPOINTS.PROFILE),
 
+  // Backend Customer DTO uses ALL-LOWERCASE `firstname` / `lastname` (matches
+  // the DB columns). If we send camelCase keys, Jackson silently binds them as
+  // null and the backend wipes the customer's name on save. Always serialise
+  // with the wire shape the backend expects, regardless of what the form uses.
   updateProfile: (body: { firstName: string; lastName: string }) =>
-    apiPut<Customer>(ENDPOINTS.PROFILE, body),
+    apiPut<Customer>(ENDPOINTS.PROFILE, {
+      firstname: body.firstName,
+      lastname: body.lastName,
+    }),
 
   updateBillingAddress: (body: { billingAddress: CustomerAddress }) =>
     apiPut<CustomerAddress>(ENDPOINTS.BILLING_ADDRESS, body),

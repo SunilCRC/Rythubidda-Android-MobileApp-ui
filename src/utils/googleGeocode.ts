@@ -176,6 +176,22 @@ export async function reverseGeocode(
   lat: number,
   lng: number,
 ): Promise<ReverseGeocodeResult> {
+  // Try once, and on a transient error (network blip / timeout) retry
+  // once after a short delay. Persistent transients still bubble up.
+  const first = await reverseGeocodeOnce(lat, lng);
+  if (first.ok) return first;
+  if (first.error === 'network' || first.error === 'timeout') {
+    await new Promise<void>(r => setTimeout(() => r(), 400));
+    const second = await reverseGeocodeOnce(lat, lng);
+    return second;
+  }
+  return first;
+}
+
+async function reverseGeocodeOnce(
+  lat: number,
+  lng: number,
+): Promise<ReverseGeocodeResult> {
   const cache = await loadCache();
   const key = cacheKey(lat, lng);
   const hit = cache.get(key);

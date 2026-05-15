@@ -1,5 +1,6 @@
 import React from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { confirm } from '../../utils/confirm';
 import Icon from 'react-native-vector-icons/Feather';
 import { useNavigation } from '@react-navigation/native';
 import { Card, Divider, SignInPrompt, Text } from '../../components/common';
@@ -17,6 +18,10 @@ interface MenuItem {
   screen?: string;
   danger?: boolean;
   onPress?: () => void;
+  /** Foreground colour for the icon (defaults to primary) */
+  tint?: string;
+  /** Soft tinted background behind the icon (icon-well) */
+  tintBg?: string;
 }
 
 export const ProfileScreen: React.FC = () => {
@@ -38,41 +43,112 @@ export const ProfileScreen: React.FC = () => {
     );
   }
 
-  const confirmLogout = () => {
-    Alert.alert('Log out', 'Are you sure you want to log out?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Log out', style: 'destructive', onPress: () => logout() },
-    ]);
+  const confirmLogout = async () => {
+    const ok = await confirm({
+      title: 'Log out of Rythu Bidda?',
+      message: 'You can sign back in any time with your phone number.',
+      confirmText: 'Log out',
+      cancelText: 'Stay signed in',
+      destructive: true,
+      icon: 'log-out',
+    });
+    if (ok) logout();
   };
 
+  // Per-item accent colours: each menu row gets its own hue so the list
+  // doesn't read as a wall of brown. Backgrounds are soft pastels of the
+  // matching tone so the icons pop without shouting.
   const sections: { title: string; items: MenuItem[] }[] = [
     {
       title: 'Account',
       items: [
-        { icon: 'user', label: 'Edit Profile', screen: 'EditProfile' },
-        { icon: 'lock', label: 'Change Password', screen: 'ChangePassword' },
-        { icon: 'map-pin', label: 'My Addresses', screen: 'Addresses' },
+        {
+          icon: 'user',
+          label: 'Edit Profile',
+          screen: 'EditProfile',
+          tint: colors.primary,
+          tintBg: colors.primaryMuted,
+        },
+        {
+          icon: 'lock',
+          label: 'Change Password',
+          screen: 'ChangePassword',
+          tint: colors.info,
+          tintBg: colors.infoSoft,
+        },
+        {
+          icon: 'map-pin',
+          label: 'My Addresses',
+          screen: 'Addresses',
+          tint: colors.accent,
+          tintBg: '#FFE6D6',
+        },
       ],
     },
     {
       title: 'Orders & Support',
       items: [
-        { icon: 'mail', label: 'Contact Us', screen: 'Contact' },
-        { icon: 'info', label: 'About', screen: 'About' },
+        {
+          icon: 'mail',
+          label: 'Contact Us',
+          screen: 'Contact',
+          tint: colors.success,
+          tintBg: colors.successSoft,
+        },
+        {
+          icon: 'info',
+          label: 'About',
+          screen: 'About',
+          tint: colors.secondaryDark,
+          tintBg: colors.secondarySoft,
+        },
       ],
     },
     {
       title: 'Policies',
       items: [
-        { icon: 'file-text', label: 'Terms & Conditions', screen: 'Terms' },
-        { icon: 'shield', label: 'Privacy Policy', screen: 'Privacy' },
-        { icon: 'rotate-ccw', label: 'Refund Policy', screen: 'RefundPolicy' },
-        { icon: 'truck', label: 'Shipping Policy', screen: 'ShippingPolicy' },
+        {
+          icon: 'file-text',
+          label: 'Terms & Conditions',
+          screen: 'Terms',
+          tint: colors.primaryDark,
+          tintBg: colors.tintMid,
+        },
+        {
+          icon: 'shield',
+          label: 'Privacy Policy',
+          screen: 'Privacy',
+          tint: colors.info,
+          tintBg: colors.infoSoft,
+        },
+        {
+          icon: 'rotate-ccw',
+          label: 'Refund Policy',
+          screen: 'RefundPolicy',
+          tint: colors.warning,
+          tintBg: colors.warningSoft,
+        },
+        {
+          icon: 'truck',
+          label: 'Shipping Policy',
+          screen: 'ShippingPolicy',
+          tint: colors.success,
+          tintBg: colors.successSoft,
+        },
       ],
     },
     {
       title: '',
-      items: [{ icon: 'log-out', label: 'Log out', danger: true, onPress: confirmLogout }],
+      items: [
+        {
+          icon: 'log-out',
+          label: 'Log out',
+          danger: true,
+          onPress: confirmLogout,
+          tint: colors.error,
+          tintBg: colors.errorSoft,
+        },
+      ],
     },
   ];
 
@@ -109,40 +185,49 @@ export const ProfileScreen: React.FC = () => {
         {sections.map((section, i) => (
           <View key={`sec-${i}`} style={{ marginTop: spacing.lg }}>
             {section.title ? (
-              <Text variant="label" color={colors.textSecondary} style={styles.sectionTitle}>
-                {section.title}
+              <Text
+                variant="label"
+                color={colors.black}
+                weight="700"
+                style={styles.sectionTitle}
+              >
+                {section.title.toUpperCase()}
               </Text>
             ) : null}
             <Card padded={false}>
-              {section.items.map((item, idx) => (
-                <View key={`it-${idx}`}>
-                  <Pressable
-                    onPress={() =>
-                      item.onPress ? item.onPress() : navigation.navigate(item.screen!)
-                    }
-                    android_ripple={{ color: colors.pressed }}
-                    style={styles.menuRow}
-                  >
-                    <Icon
-                      name={item.icon}
-                      size={20}
-                      color={item.danger ? colors.error : colors.primary}
-                    />
-                    <Text
-                      variant="body"
-                      color={item.danger ? colors.error : colors.textPrimary}
-                      weight="500"
-                      style={{ flex: 1, marginLeft: spacing.base }}
+              {section.items.map((item, idx) => {
+                const tint = item.tint ?? colors.primary;
+                const tintBg = item.tintBg ?? colors.primaryMuted;
+                return (
+                  <View key={`it-${idx}`}>
+                    <Pressable
+                      onPress={() =>
+                        item.onPress ? item.onPress() : navigation.navigate(item.screen!)
+                      }
+                      android_ripple={{ color: colors.pressed }}
+                      style={styles.menuRow}
                     >
-                      {item.label}
-                    </Text>
-                    {!item.danger ? (
-                      <Icon name="chevron-right" size={18} color={colors.textTertiary} />
+                      <View style={[styles.iconWell, { backgroundColor: tintBg }]}>
+                        <Icon name={item.icon} size={18} color={tint} />
+                      </View>
+                      <Text
+                        variant="body"
+                        color={item.danger ? colors.error : colors.black}
+                        weight="600"
+                        style={styles.menuLabel}
+                      >
+                        {item.label}
+                      </Text>
+                      {!item.danger ? (
+                        <Icon name="chevron-right" size={18} color={colors.primary} />
+                      ) : null}
+                    </Pressable>
+                    {idx < section.items.length - 1 ? (
+                      <Divider spacing_={0} style={styles.rowDivider} />
                     ) : null}
-                  </Pressable>
-                  {idx < section.items.length - 1 ? <Divider spacing_={0} /> : null}
-                </View>
-              ))}
+                  </View>
+                );
+              })}
             </Card>
           </View>
         ))}
@@ -170,11 +255,33 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  sectionTitle: { marginBottom: spacing.sm, marginLeft: 2 },
+  sectionTitle: {
+    marginBottom: spacing.sm,
+    marginLeft: spacing.xs,
+    fontSize: 12,
+    letterSpacing: 1.1,
+  },
   menuRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: spacing.base,
-    paddingVertical: spacing.base,
+    paddingVertical: spacing.md + 2,
+  },
+  iconWell: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  menuLabel: {
+    flex: 1,
+    marginLeft: spacing.md,
+    fontSize: 15.5,
+  },
+  // Indented divider so it lines up under the label, not the icon-well —
+  // the icons remain visually grouped while the dividers feel cleaner.
+  rowDivider: {
+    marginLeft: spacing.base + 36 + spacing.md,
   },
 });

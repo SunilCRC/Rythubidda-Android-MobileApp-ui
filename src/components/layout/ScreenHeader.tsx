@@ -44,7 +44,7 @@ export const ScreenHeader: React.FC<Props> = ({
             android_ripple={{ color: colors.pressed, radius: 22, borderless: true }}
             style={styles.iconBtn}
           >
-            <Icon name="arrow-left" size={22} color={colors.textPrimary} />
+            <Icon name="arrow-left" size={22} color={colors.black} />
           </Pressable>
         ) : (
           <View style={styles.iconBtn} />
@@ -52,7 +52,13 @@ export const ScreenHeader: React.FC<Props> = ({
       </View>
       <View style={styles.center}>
         {title ? (
-          <Text variant="h5" color={colors.textPrimary} numberOfLines={1} align="center">
+          <Text
+            variant="h5"
+            color={colors.black}
+            weight="700"
+            numberOfLines={1}
+            align="center"
+          >
             {title}
           </Text>
         ) : null}

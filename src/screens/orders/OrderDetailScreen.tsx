@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
-import { Alert, Linking, ScrollView, StyleSheet, View } from 'react-native';
+import { Linking, ScrollView, StyleSheet, View } from 'react-native';
+import { confirm } from '../../utils/confirm';
 import { useQuery } from '@tanstack/react-query';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import FastImage from 'react-native-fast-image';
@@ -113,36 +114,32 @@ export const OrderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
   // Cancellation now goes through customer support — surfaces a quick
   // confirmation, then dials the support number so the user can speak
   // to a human (and we avoid any half-cancelled order edge cases).
-  const handleCallToCancel = () => {
-    Alert.alert(
-      'Call to cancel',
-      `To cancel this order, please call our support team at ${SUPPORT_PHONE_DISPLAY}. We're happy to help.`,
-      [
-        { text: 'Not now', style: 'cancel' },
-        {
-          text: 'Call now',
-          onPress: async () => {
-            try {
-              const url = `tel:${SUPPORT_PHONE_TEL}`;
-              const supported = await Linking.canOpenURL(url);
-              if (!supported) {
-                showToast.error(
-                  'Could not start call',
-                  `Please dial ${SUPPORT_PHONE_DISPLAY} manually.`,
-                );
-                return;
-              }
-              await Linking.openURL(url);
-            } catch (err: any) {
-              showToast.error(
-                'Could not start call',
-                err?.message ?? `Please dial ${SUPPORT_PHONE_DISPLAY}.`,
-              );
-            }
-          },
-        },
-      ],
-    );
+  const handleCallToCancel = async () => {
+    const ok = await confirm({
+      title: 'Call to cancel',
+      message: `To cancel this order, please call our support team at ${SUPPORT_PHONE_DISPLAY}. We're happy to help.`,
+      confirmText: 'Call now',
+      cancelText: 'Not now',
+      icon: 'phone',
+    });
+    if (!ok) return;
+    try {
+      const url = `tel:${SUPPORT_PHONE_TEL}`;
+      const supported = await Linking.canOpenURL(url);
+      if (!supported) {
+        showToast.error(
+          'Could not start call',
+          `Please dial ${SUPPORT_PHONE_DISPLAY} manually.`,
+        );
+        return;
+      }
+      await Linking.openURL(url);
+    } catch (err: any) {
+      showToast.error(
+        'Could not start call',
+        err?.message ?? `Please dial ${SUPPORT_PHONE_DISPLAY}.`,
+      );
+    }
   };
 
   return (

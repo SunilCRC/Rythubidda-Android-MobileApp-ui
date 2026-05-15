@@ -1,13 +1,13 @@
 import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Pressable,
   RefreshControl,
   StyleSheet,
   View,
 } from 'react-native';
+import { confirm } from '../../utils/confirm';
 import Icon from 'react-native-vector-icons/Feather';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import {
@@ -56,23 +56,23 @@ export const AddressesScreen: React.FC = () => {
     }, [load]),
   );
 
-  const handleDelete = (id: number) => {
-    Alert.alert('Delete address?', 'This cannot be undone.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await addressService.remove(id);
-            showToast.success('Address deleted');
-            load();
-          } catch (e: any) {
-            showToast.error('Delete failed', e?.message);
-          }
-        },
-      },
-    ]);
+  const handleDelete = async (id: number) => {
+    const ok = await confirm({
+      title: 'Delete this address?',
+      message: 'This cannot be undone — you will need to re-add it later.',
+      confirmText: 'Delete',
+      cancelText: 'Keep it',
+      destructive: true,
+      icon: 'trash-2',
+    });
+    if (!ok) return;
+    try {
+      await addressService.remove(id);
+      showToast.success('Address deleted');
+      load();
+    } catch (e: any) {
+      showToast.error('Delete failed', e?.message);
+    }
   };
 
   if (addresses === null) return <LoadingScreen />;
