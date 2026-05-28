@@ -115,11 +115,14 @@ export const colors = {
   border: '#E5E0D4',
   divider: palette.neutral[200],
 
-  // Text — darker, higher contrast. No pale greys anywhere.
-  textPrimary: palette.neutral[800],       // near-black with warmth
-  textSecondary: palette.neutral[600],     // #3E3D37 — strong body color
-  textTertiary: palette.neutral[500],      // #555550 — darker than old tertiary
-  textMuted: palette.neutral[400],         // #8A8A80 — only for supporting captions
+  // Text — globally bumped DARKER so nothing in the UI reads as pale.
+  // The hierarchy still exists (primary > secondary > tertiary > muted)
+  // but the bottom rungs are now well above the legibility floor on
+  // both light and warm-cream backgrounds.
+  textPrimary: palette.neutral[800],       // #161612 — near-black with warmth
+  textSecondary: palette.neutral[700],     // #24241F — darker than before (was 600)
+  textTertiary: palette.neutral[600],      // #3E3D37 — was #555550, now matches old secondary
+  textMuted: palette.neutral[500],         // #555550 — was #8A8A80 pale grey, now solidly readable
   textOnPrimary: palette.white,
   textOnSecondary: palette.primary[800],
   textLink: palette.primary.DEFAULT,

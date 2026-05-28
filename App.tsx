@@ -40,8 +40,11 @@ const toastConfig = {
 
 const App: React.FC = () => {
   useEffect(() => {
+    // Set ONLY the bar style globally — leave the backgroundColor to
+    // each screen's own <StatusBar> component so per-screen header
+    // colours can take effect. Without this change the imperative
+    // setBackgroundColor here was overriding HomeScreen's inline tint.
     if (Platform.OS === 'android') {
-      StatusBar.setBackgroundColor(colors.background);
       StatusBar.setBarStyle('dark-content');
     }
   }, []);
@@ -52,11 +55,10 @@ const App: React.FC = () => {
         <QueryClientProvider client={queryClient}>
           <ErrorBoundary>
             <View style={styles.root}>
-              <StatusBar
-                barStyle="dark-content"
-                backgroundColor={colors.background}
-                translucent={false}
-              />
+              {/* Default StatusBar — only sets bar style. backgroundColor
+                  is intentionally NOT set here so per-screen StatusBar
+                  components (HomeScreen → tintSoft, etc.) win. */}
+              <StatusBar barStyle="dark-content" translucent={false} />
               <RootNavigator />
               {/* Brand confirm dialog — replaces native Alert.alert */}
               <ConfirmHost />

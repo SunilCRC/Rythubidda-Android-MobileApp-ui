@@ -255,8 +255,11 @@ export const SplashScreen: React.FC = () => {
               transform: [{ scale: logoScale }],
             }}
           >
+            {/* Use the official branded logo (cow + "RYTHU BIDDA"
+                wordmark) — same asset used on the home header so the
+                splash → home transition feels visually continuous. */}
             <FastImage
-              source={require('../../assets/images/cow-animation.gif')}
+              source={require('../../assets/images/logo.gif')}
               style={styles.cow}
               resizeMode={FastImage.resizeMode.contain}
             />

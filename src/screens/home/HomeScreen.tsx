@@ -24,6 +24,7 @@ import { Container } from '../../components/layout/Container';
 import { DeliverToPill } from '../../components/DeliverToPill';
 import { HeroCarousel } from '../../components/HeroCarousel';
 import { ProductCard } from '../../components/ProductCard';
+import { WelcomePromoModal } from '../../components/feedback/WelcomePromoModal';
 import { colors } from '../../theme/colors';
 import { radius, shadows, spacing } from '../../theme/spacing';
 import { useUIStore } from '../../store';
@@ -193,11 +194,17 @@ export const HomeScreen: React.FC = () => {
 
   return (
     <Container edges={['top']} background={colors.tintSoft}>
-      {/* Match the status bar to the gradient's top stop so the safe-area
-          strip above the header reads as part of the header (instead of
-          flashing white). barStyle stays dark-content because the
-          gradient is light. */}
-      <StatusBar backgroundColor={colors.tintSoft} barStyle="dark-content" />
+      {/* Match the status bar to the HEADER gradient's top stop so the
+          safe-area strip above the header reads as part of the header
+          (instead of flashing white from the body background). All three
+          props are required — without `translucent={false}` Android can
+          render the bar transparent over the gradient, which produces
+          the wrong colour on phones with light system themes. */}
+      <StatusBar
+        backgroundColor={colors.tintSoft}
+        barStyle="dark-content"
+        translucent={false}
+      />
       {/* ── Header band ──────────────────────────────────────────────────
            Richer 3-stop warm gradient (cream → tan → cream) for depth,
            with a subtle bottom accent strip. Brand mark on the left,
@@ -231,7 +238,7 @@ export const HomeScreen: React.FC = () => {
               `mixBlendMode: 'multiply'` knocks out the GIF's baked-in
               white background against the cream gradient. */}
           <FastImage
-            source={require('../../assets/images/cow-animation.gif')}
+            source={require('../../assets/images/logo.gif')}
             style={styles.brandImage}
             resizeMode={FastImage.resizeMode.contain}
           />
@@ -547,6 +554,12 @@ export const HomeScreen: React.FC = () => {
           </View>
         </Modal>
       ) : null}
+
+      {/* Welcome promo — shows once per app session right after the
+          user lands on Home. Self-contained: handles its own visibility
+          and animations. Will be wired to the backend in a future
+          iteration to surface live offers / rewards. */}
+      <WelcomePromoModal />
     </Container>
   );
 };
