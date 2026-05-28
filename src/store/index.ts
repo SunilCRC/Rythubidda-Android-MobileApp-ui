@@ -3,3 +3,4 @@ export { useCartStore, useCartItemCount, useCartLineFor } from './cartStore';
 export { useLocationStore, useDeliveryPincode } from './locationStore';
 export type { DeliveryLocation } from './locationStore';
 export { useDeliveryCenterStore, useDeliveryCenters } from './deliveryCenterStore';
+export { useUIStore } from './uiStore';

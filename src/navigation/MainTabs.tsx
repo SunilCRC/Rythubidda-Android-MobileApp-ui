@@ -10,7 +10,7 @@ import Animated, {
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { colors } from '../theme/colors';
 import { Text } from '../components/common/Text';
-import { useCartItemCount } from '../store';
+import { useCartItemCount, useUIStore } from '../store';
 import type {
   CartStackParamList,
   CategoriesStackParamList,
@@ -205,6 +205,22 @@ export const MainTabs: React.FC = () => (
       name="CategoriesTab"
       component={CategoriesStackScreen}
       options={{ tabBarLabel: 'Shop' }}
+      listeners={({ navigation }) => ({
+        // Intercept the "Shop" tab press: instead of navigating to the
+        // CategoriesTab stack (which would render a separate full-screen
+        // list of categories), open the side-drawer on the home screen.
+        // The drawer renders the same data with less friction and
+        // matches the hamburger-menu behaviour the user expects.
+        tabPress: e => {
+          e.preventDefault();
+          // Make sure we're on Home so the drawer (which is mounted
+          // inside HomeScreen) is in the tree when the open signal fires.
+          // Cast: the typed signature insists on a strongly typed param
+          // object, but bottom-tab `navigate` accepts a bare tab name.
+          (navigation as any).navigate('HomeTab');
+          useUIStore.getState().openCategoriesDrawer();
+        },
+      })}
     />
     <Tab.Screen name="CartTab" component={CartStackScreen} options={{ tabBarLabel: 'Cart' }} />
     <Tab.Screen name="OrdersTab" component={OrdersStackScreen} options={{ tabBarLabel: 'Orders' }} />

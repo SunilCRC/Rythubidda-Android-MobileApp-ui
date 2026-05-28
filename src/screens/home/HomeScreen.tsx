@@ -1,13 +1,18 @@
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Animated,
   Dimensions,
+  Easing,
   FlatList,
+  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
+  StatusBar,
   StyleSheet,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Feather';
 import LinearGradient from 'react-native-linear-gradient';
 import FastImage from 'react-native-fast-image';
@@ -21,7 +26,7 @@ import { HeroCarousel } from '../../components/HeroCarousel';
 import { ProductCard } from '../../components/ProductCard';
 import { colors } from '../../theme/colors';
 import { radius, shadows, spacing } from '../../theme/spacing';
-import { useAuthStore, useIsAuthenticated } from '../../store';
+import { useUIStore } from '../../store';
 import { toArray } from '../../utils/format';
 import { hasProductImage } from '../../utils/image';
 import type { Category, GalleryImage, Product } from '../../types';
@@ -29,6 +34,18 @@ import type { Category, GalleryImage, Product } from '../../types';
 // Show ~2 cards per screen width — slight peek of the third to hint "scroll me".
 const SCREEN_W = Dimensions.get('window').width;
 const PRODUCT_CARD_WIDTH = Math.floor((SCREEN_W - 16 * 2 - 12) / 2);
+
+// Responsive brand-image width — bounded so it doesn't dominate small
+// phones (320dp) or look tiny on tablets. The header reserves ~120dp
+// for the menu + profile buttons + padding; the cow takes the rest up
+// to a cap.
+const BRAND_W = Math.max(120, Math.min(160, SCREEN_W * 0.42));
+const BRAND_H = Math.round(BRAND_W * 0.4); // ~2.5 : 1 aspect
+
+// Side-drawer geometry — capped so on tablets it doesn't take half the
+// screen, and on small phones it leaves a visible backdrop strip the
+// user can tap to dismiss.
+const DRAWER_W = Math.min(320, SCREEN_W * 0.82);
 
 // Curated background palette for category chips — cycled deterministically
 // so the same category gets the same color every render.
@@ -54,11 +71,78 @@ const CATEGORY_ICONS = [
 
 export const HomeScreen: React.FC = () => {
   const navigation = useNavigation<any>();
-  const user = useAuthStore(s => s.user);
-  const isAuth = useIsAuthenticated();
+  // Safe-area insets — used by the side-drawer so its header sits
+  // BELOW the status bar / notch instead of being painted under it.
+  const insets = useSafeAreaInsets();
 
-  const openLogin = () =>
-    navigation.getParent()?.getParent()?.navigate('Auth', { screen: 'Login' });
+  // Jump from inside HomeStack (inside HomeTab) up to the bottom-tab
+  // navigator and over to the ProfileTab. ProfileScreen itself decides
+  // whether to show the SignInPrompt (guest) or the full profile (auth)
+  // — we don't need to branch here.
+  const openProfile = () =>
+    navigation.getParent()?.navigate('ProfileTab');
+
+  // ── Categories side-drawer state ─────────────────────────────────────
+  // `mounted` controls whether the Modal is in the tree at all (so we
+  // can run an exit animation before unmount); drawerX/backdropOpacity
+  // drive the slide + fade transitions. useNativeDriver throughout so
+  // the animation runs off the JS thread.
+  //
+  // The OPEN signal is driven by the global UI store — that way the
+  // bottom-tab "Shop" button can trigger the drawer too, without us
+  // needing to lift the animation logic out of this screen.
+  const [drawerMounted, setDrawerMounted] = useState(false);
+  const drawerX = useRef(new Animated.Value(-DRAWER_W)).current;
+  const backdropOpacity = useRef(new Animated.Value(0)).current;
+  const globalDrawerOpen = useUIStore(s => s.categoriesDrawerOpen);
+  const closeGlobalDrawer = useUIStore(s => s.closeCategoriesDrawer);
+  const openGlobalDrawer = useUIStore(s => s.openCategoriesDrawer);
+
+  const runOpenAnim = useCallback(() => {
+    setDrawerMounted(true);
+    Animated.parallel([
+      Animated.timing(drawerX, {
+        toValue: 0,
+        duration: 240,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(backdropOpacity, {
+        toValue: 0.5,
+        duration: 240,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [drawerX, backdropOpacity]);
+
+  const runCloseAnim = useCallback(() => {
+    Animated.parallel([
+      Animated.timing(drawerX, {
+        toValue: -DRAWER_W,
+        duration: 200,
+        easing: Easing.in(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(backdropOpacity, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+    ]).start(({ finished }) => {
+      if (finished) setDrawerMounted(false);
+    });
+  }, [drawerX, backdropOpacity]);
+
+  // Bridge the global open/close signal to the local animation. When
+  // anyone (the hamburger here, the Shop tab in MainTabs, future
+  // triggers) flips the store flag we play the matching animation.
+  useEffect(() => {
+    if (globalDrawerOpen) runOpenAnim();
+    else runCloseAnim();
+  }, [globalDrawerOpen, runOpenAnim, runCloseAnim]);
+
+  const openDrawer = openGlobalDrawer;
+  const closeDrawer = closeGlobalDrawer;
 
   const gallery = useQuery({
     queryKey: ['gallery'],
@@ -107,116 +191,89 @@ export const HomeScreen: React.FC = () => {
     [featuredList],
   );
 
-  const greet = greeting();
-  const firstName = user?.firstname || user?.firstName || 'there';
-
   return (
-    <Container edges={['top']} background={colors.background}>
-      {/* ── Sophisticated header band ────────────────────────────────────
-           Soft cream gradient backdrop carrying the logo, greeting, and
-           sign-in / avatar pill. Sets a premium tone before the user even
-           scrolls. */}
+    <Container edges={['top']} background={colors.tintSoft}>
+      {/* Match the status bar to the gradient's top stop so the safe-area
+          strip above the header reads as part of the header (instead of
+          flashing white). barStyle stays dark-content because the
+          gradient is light. */}
+      <StatusBar backgroundColor={colors.tintSoft} barStyle="dark-content" />
+      {/* ── Header band ──────────────────────────────────────────────────
+           Richer 3-stop warm gradient (cream → tan → cream) for depth,
+           with a subtle bottom accent strip. Brand mark on the left,
+           profile pill top-right. Search lives in the row below as a
+           filled brand-coloured CTA so it reads as the primary action. */}
       <LinearGradient
-        colors={[colors.tintSoft, colors.background]}
+        colors={[colors.tintSoft, colors.tintMid, colors.tintSoft]}
         start={{ x: 0, y: 0 }}
-        end={{ x: 0, y: 1 }}
+        end={{ x: 1, y: 1 }}
         style={styles.headerBand}
       >
         <View style={styles.topBar}>
-          {/* Greeting + sign-in (guest only). Takes remaining horizontal
-              space so the brand image on the right has a solid anchor. */}
-          <View style={styles.greetCol}>
-            <Text variant="caption" weight="700" color={colors.textTertiary}>
-              {greet} ✨
-            </Text>
-            <Text
-              variant="h4"
-              weight="800"
-              color={colors.textPrimary}
-              numberOfLines={1}
-            >
-              {isAuth ? `Hi, ${firstName}` : 'Welcome'}
-            </Text>
-            <Text
-              variant="caption"
-              weight="600"
-              color={colors.textSecondary}
-              numberOfLines={1}
-              style={{ marginTop: 2 }}
-            >
-              {isAuth
-                ? 'Fresh harvest, farmer-first.'
-                : 'Sign in for fresh deliveries.'}
-            </Text>
+          {/* Hamburger menu — opens the categories side-drawer.
+              Anchored top-left, conventional app pattern. */}
+          <Pressable
+            onPress={openDrawer}
+            android_ripple={{ color: colors.pressed, borderless: true, radius: 22 }}
+            style={({ pressed }) => [
+              styles.menuBtn,
+              pressed && { opacity: 0.85 },
+            ]}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Open categories menu"
+          >
+            <Icon name="menu" size={22} color={colors.primary} />
+          </Pressable>
 
-            {!isAuth ? (
-              <Pressable
-                onPress={openLogin}
-                android_ripple={{ color: colors.pressed }}
-                style={styles.signInBtn}
-                hitSlop={6}
-              >
-                <LinearGradient
-                  colors={colors.gradients.primary}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.signInInner}
-                >
-                  <Icon name="log-in" size={12} color={colors.white} />
-                  <Text
-                    variant="caption"
-                    color={colors.white}
-                    weight="800"
-                    style={{ marginLeft: 4 }}
-                  >
-                    Sign In
-                  </Text>
-                </LinearGradient>
-              </Pressable>
-            ) : null}
-          </View>
-
-          {/* Animated cow GIF — playful brand mark on the right.
-              FastImage uses Glide on Android / SDWebImage on iOS, both
-              of which decode and loop GIFs natively. No extra deps. */}
+          {/* Animated cow GIF — brand mark, centred between the menu
+              and profile buttons by the topBar's space-between layout.
+              `mixBlendMode: 'multiply'` knocks out the GIF's baked-in
+              white background against the cream gradient. */}
           <FastImage
             source={require('../../assets/images/cow-animation.gif')}
             style={styles.brandImage}
             resizeMode={FastImage.resizeMode.contain}
           />
+
+          {/* Profile pill — anchored top-right. Tapping jumps to the
+              ProfileTab (which renders the sign-in prompt for guests
+              or the full profile for authenticated users). */}
+          <Pressable
+            onPress={openProfile}
+            android_ripple={{ color: colors.pressed, borderless: true, radius: 22 }}
+            style={({ pressed }) => [
+              styles.profileBtn,
+              pressed && { opacity: 0.85 },
+            ]}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Open profile"
+          >
+            <Icon name="user" size={20} color={colors.primary} />
+          </Pressable>
         </View>
 
-        {/* Deliver-to pill — Zepto / Swiggy / Blinkit pattern */}
-        <View style={styles.deliverToWrap}>
-          <DeliverToPill />
-        </View>
-
-        {/* Premium search bar */}
-        <View style={styles.searchBarWrap}>
+        {/* DeliverToPill + filled-gradient search CTA, side-by-side. The
+            pill stretches to fill the available width; the search button
+            uses the brand primary gradient so it pops as THE primary
+            action on the home screen. */}
+        <View style={styles.deliverRow}>
+          <View style={{ flex: 1 }}>
+            <DeliverToPill />
+          </View>
           <Pressable
             onPress={() => navigation.navigate('Search')}
+            android_ripple={{ color: colors.pressed, borderless: true, radius: 24 }}
             style={({ pressed }) => [
-              styles.searchBar,
-              pressed && { opacity: 0.92 },
+              styles.searchBtnWrap,
+              pressed && { opacity: 0.85 },
             ]}
-            android_ripple={{ color: colors.pressed }}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Search products"
           >
-            <View style={styles.searchIconWell}>
-              <Icon name="search" size={16} color={colors.primary} />
-            </View>
-            <Text
-              variant="body"
-              weight="600"
-              color={colors.textSecondary}
-              style={{ flex: 1, marginLeft: spacing.sm }}
-              numberOfLines={1}
-            >
-              Search rice, jaggery, spices…
-            </Text>
-            <View style={styles.searchDivider} />
-            <View style={styles.micBtn}>
-              <Icon name="mic" size={14} color={colors.primary} />
-            </View>
+            <Icon name="search" size={22} color={colors.white} />
           </Pressable>
         </View>
       </LinearGradient>
@@ -271,66 +328,10 @@ export const HomeScreen: React.FC = () => {
           <Icon name="arrow-right" size={14} color={colors.primaryDark} />
         </LinearGradient>
 
-        {/* Categories */}
-        <SectionHeader
-          title="Shop by category"
-          icon="grid"
-          action={() => navigation.navigate('CategoriesTab')}
-          actionLabel="See all"
-        />
-        {categories.isLoading ? (
-          <View style={styles.hRow}>
-            {Array.from({ length: 5 }).map((_, i) => (
-              <View key={i} style={{ marginRight: spacing.base }}>
-                <Skeleton
-                  width={68}
-                  height={68}
-                  borderRadius={34}
-                  style={{ marginBottom: 6 }}
-                />
-                <Skeleton width={60} height={10} borderRadius={5} />
-              </View>
-            ))}
-          </View>
-        ) : (
-          <FlatList
-            data={categoriesList}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            keyExtractor={(c, i) => `cat-${c.id ?? c.categoryId ?? i}`}
-            contentContainerStyle={styles.hList}
-            renderItem={({ item, index }) => {
-              const color = CATEGORY_COLORS[index % CATEGORY_COLORS.length];
-              const iconName =
-                CATEGORY_ICONS[index % CATEGORY_ICONS.length] || 'circle';
-              return (
-                <Pressable
-                  onPress={() =>
-                    navigation.navigate('Category', {
-                      categoryId: (item.id || item.categoryId)!,
-                      name: item.name,
-                    })
-                  }
-                  style={styles.catItem}
-                  android_ripple={{ color: colors.pressed, borderless: true, radius: 40 }}
-                >
-                  <View style={[styles.catIcon, { backgroundColor: color.bg }]}>
-                    <Icon name={iconName} size={26} color={color.icon} />
-                  </View>
-                  <Text
-                    variant="caption"
-                    color={colors.textPrimary}
-                    align="center"
-                    numberOfLines={2}
-                    weight="700"
-                  >
-                    {item.name}
-                  </Text>
-                </Pressable>
-              );
-            }}
-          />
-        )}
+        {/* (The inline "Shop by category" horizontal list used to live
+            here. It's been replaced by the hamburger ☰ → side-drawer
+            pattern — same data, less vertical scrolling on the home
+            screen, full category list visible at once in the drawer.) */}
 
         {/* Best Sellers */}
         {bestSellers.length > 0 ? (
@@ -413,6 +414,139 @@ export const HomeScreen: React.FC = () => {
 
         <View style={{ height: spacing['2xl'] }} />
       </ScrollView>
+
+      {/* ── Categories side-drawer ────────────────────────────────────
+           Slides in from the left when the hamburger is tapped. The
+           backdrop is a separate Animated.View so it can fade in
+           independently. Tap the backdrop OR the X to dismiss. */}
+      {drawerMounted ? (
+        <Modal
+          visible
+          transparent
+          animationType="none"
+          onRequestClose={closeDrawer}
+          statusBarTranslucent
+        >
+          <View style={StyleSheet.absoluteFill}>
+            <Animated.View
+              pointerEvents={drawerMounted ? 'auto' : 'none'}
+              style={[styles.drawerBackdrop, { opacity: backdropOpacity }]}
+            />
+            {/* Backdrop tap-to-close — covers the visible area to the
+                right of the drawer. Using a separate Pressable instead
+                of putting onPress on the backdrop View so the
+                Animated.View opacity transitions don't interfere. */}
+            <Pressable
+              style={[styles.drawerBackdropTouch, { left: DRAWER_W }]}
+              onPress={closeDrawer}
+            />
+            <Animated.View
+              style={[
+                styles.drawer,
+                {
+                  width: DRAWER_W,
+                  // Push the header below the status bar / notch. Without
+                  // this the "Categories" title gets painted under the
+                  // clock and the close button overlaps the camera cutout
+                  // on phones with a notch.
+                  paddingTop: insets.top + spacing.md,
+                  transform: [{ translateX: drawerX }],
+                },
+              ]}
+            >
+              <View style={styles.drawerHeader}>
+                <View style={styles.drawerTitleRow}>
+                  <View style={styles.drawerTitleIconWell}>
+                    <Icon name="grid" size={16} color={colors.primary} />
+                  </View>
+                  <Text variant="h5" color={colors.black} weight="800">
+                    Categories
+                  </Text>
+                </View>
+                <Pressable
+                  onPress={closeDrawer}
+                  hitSlop={10}
+                  android_ripple={{ color: colors.pressed, borderless: true, radius: 18 }}
+                  style={styles.drawerCloseBtn}
+                  accessibilityLabel="Close categories"
+                >
+                  <Icon name="x" size={20} color={colors.textPrimary} />
+                </Pressable>
+              </View>
+              {categories.isLoading ? (
+                <View style={{ padding: spacing.base }}>
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <Skeleton
+                      key={i}
+                      height={48}
+                      borderRadius={radius.md}
+                      style={{ marginBottom: spacing.sm }}
+                    />
+                  ))}
+                </View>
+              ) : (
+                <ScrollView
+                  contentContainerStyle={styles.drawerList}
+                  showsVerticalScrollIndicator={false}
+                >
+                  {categoriesList.map((c, index) => {
+                    const color = CATEGORY_COLORS[index % CATEGORY_COLORS.length];
+                    const iconName =
+                      CATEGORY_ICONS[index % CATEGORY_ICONS.length] || 'circle';
+                    return (
+                      <Pressable
+                        key={`drawer-cat-${c.id ?? c.categoryId ?? index}`}
+                        onPress={() => {
+                          closeDrawer();
+                          navigation.navigate('Category', {
+                            categoryId: (c.id || c.categoryId)!,
+                            name: c.name,
+                          });
+                        }}
+                        android_ripple={{ color: colors.pressed }}
+                        style={styles.drawerItem}
+                      >
+                        <View
+                          style={[
+                            styles.drawerItemIcon,
+                            { backgroundColor: color.bg },
+                          ]}
+                        >
+                          <Icon name={iconName} size={18} color={color.icon} />
+                        </View>
+                        <Text
+                          variant="body"
+                          color={colors.textPrimary}
+                          weight="600"
+                          style={{ flex: 1 }}
+                          numberOfLines={1}
+                        >
+                          {c.name}
+                        </Text>
+                        <Icon
+                          name="chevron-right"
+                          size={16}
+                          color={colors.textTertiary}
+                        />
+                      </Pressable>
+                    );
+                  })}
+                  {categoriesList.length === 0 ? (
+                    <Text
+                      variant="bodySmall"
+                      color={colors.textTertiary}
+                      align="center"
+                      style={{ padding: spacing.lg }}
+                    >
+                      No categories yet. Pull down on Home to refresh.
+                    </Text>
+                  ) : null}
+                </ScrollView>
+              )}
+            </Animated.View>
+          </View>
+        </Modal>
+      ) : null}
     </Container>
   );
 };
@@ -420,13 +554,6 @@ export const HomeScreen: React.FC = () => {
 function goToProduct(navigation: any) {
   return (productId: number) =>
     navigation.navigate('ProductDetail', { productId });
-}
-
-function greeting() {
-  const h = new Date().getHours();
-  if (h < 12) return 'Good morning';
-  if (h < 17) return 'Good afternoon';
-  return 'Good evening';
 }
 
 /**
@@ -551,80 +678,79 @@ const styles = StyleSheet.create({
   // ── Header band ───────────────────────────────────────────────────────
   headerBand: {
     paddingBottom: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.tintMid,
-    ...shadows.sm,
+    ...shadows.md,
     zIndex: 5,
   },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.base,
-    paddingTop: spacing.sm,
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.sm,
+    paddingTop: spacing.xs,
     paddingBottom: spacing.xs,
   },
-  greetCol: { flex: 1, paddingRight: spacing.sm },
-  // Large brand image on the right — sized to read as a brand mark, not
-  // a profile picture. Matches the visual prominence used by Country
-  // Delight, Otipy, and other Indian agri brands on their home headers.
-  brandImage: {
-    width: 150,
-    height: 80,
-  },
-  signInBtn: {
-    alignSelf: 'flex-start',
-    borderRadius: 999,
-    overflow: 'hidden',
-    marginTop: spacing.sm,
-    ...shadows.sm,
-  },
-  signInInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.base,
-    paddingVertical: 8,
-  },
-  deliverToWrap: {
-    paddingHorizontal: spacing.base,
-    paddingBottom: spacing.sm,
-    flexDirection: 'row',
-  },
-  searchBarWrap: {
-    paddingHorizontal: spacing.base,
-    paddingTop: spacing.xs,
-  },
-  searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 6,
-    paddingVertical: 6,
-    borderRadius: radius.full,
+  // Hamburger button — anchored top-left. Same circular footprint as the
+  // profile button on the right, so the header reads as balanced.
+  menuBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.tintMid,
+    alignItems: 'center',
+    justifyContent: 'center',
     ...shadows.sm,
   },
-  searchIconWell: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.tintSoft,
+  // Brand mark — responsive width (40-160dp depending on screen size)
+  // so it scales gracefully from 320dp phones up to tablets.
+  // `mixBlendMode: 'multiply'` knocks out the white background baked
+  // into the source GIF: white × cream = cream (invisible), dark pixels
+  // stay dark. On RN versions that don't support the prop it's silently
+  // ignored and the original GIF (with its white bg) renders unchanged.
+  brandImage: {
+    width: BRAND_W,
+    height: BRAND_H,
+    mixBlendMode: 'multiply' as any,
+  },
+  // Profile pill — soft tinted background + brand-colour ring so it
+  // reads as on-brand rather than a plain white circle.
+  profileBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.surface,
+    borderWidth: 1.5,
+    borderColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
+    ...shadows.sm,
   },
-  searchDivider: {
-    width: 1,
-    height: 18,
-    backgroundColor: colors.divider,
-    marginHorizontal: spacing.sm,
+  // DeliverToPill + filled-gradient search CTA, side-by-side. The pill
+  // stretches via flex:1 in the JSX; the search button is a fixed
+  // 48×48 circle, vertically centred against the pill's natural height.
+  //
+  // IMPORTANT: do NOT use `alignItems: 'stretch'` here. Combined with
+  // `height: '100%'` on the inner button it created a layout cycle that
+  // blew the row up to fill the whole remaining screen height.
+  deliverRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.base,
+    paddingBottom: spacing.sm,
+    gap: spacing.sm,
   },
-  micBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+  // Solid brand-coloured search CTA — primary action on the home screen.
+  // Solid colour (not a gradient) so the white icon is guaranteed to
+  // render visibly on every Android version + GPU driver combo.
+  searchBtnWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 4,
+    ...shadows.md,
   },
 
   // ── Scroll area ────────────────────────────────────────────────────────
@@ -642,7 +768,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.base,
     paddingVertical: 10,
     borderRadius: radius.full,
-    marginTop: spacing.base,
+    marginTop: spacing.md,
     marginHorizontal: spacing.base,
     ...shadows.sm,
   },
@@ -655,14 +781,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  // Section header
+  // Section header — tightened marginTop so sections aren't drowning
+  // in whitespace. Each section now sits closer to the one above.
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: spacing.base,
-    marginTop: spacing.xl,
-    marginBottom: spacing.sm,
+    marginTop: spacing.lg,
+    marginBottom: spacing.xs,
   },
   sectionTitleRow: {
     flexDirection: 'row',
@@ -688,25 +815,11 @@ const styles = StyleSheet.create({
     gap: 2,
   },
 
-  // Categories
-  hRow: { flexDirection: 'row', paddingHorizontal: spacing.base },
+  // Horizontal-product list padding — still used by Best Sellers and
+  // New Arrivals carousels.
   hList: {
     paddingHorizontal: spacing.base,
     paddingVertical: spacing.xs,
-  },
-  catItem: {
-    width: 78,
-    alignItems: 'center',
-    marginRight: spacing.base,
-  },
-  catIcon: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 6,
-    ...shadows.sm,
   },
 
   // Featured grid
@@ -718,7 +831,7 @@ const styles = StyleSheet.create({
   },
   gridItem: {
     width: '48.5%',
-    marginBottom: spacing.base,
+    marginBottom: spacing.sm,
   },
   skeletonGrid: {
     flexDirection: 'row',
@@ -727,10 +840,91 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.base,
   },
 
-  // Footer accent
+  // Footer accent — tightened top padding so the home doesn't end with
+  // a sea of whitespace.
   footerAccent: {
-    paddingTop: spacing.xl,
+    paddingTop: spacing.lg,
     paddingBottom: spacing.base,
     paddingHorizontal: spacing.base,
+  },
+
+  // ── Categories side-drawer ────────────────────────────────────────
+  // Backdrop sits behind the drawer (semi-transparent dark wash).
+  drawerBackdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#000',
+  },
+  // Tap-to-close: covers the visible area to the right of the drawer
+  // (positioned with `left: DRAWER_W` in the JSX). Kept separate from
+  // the backdrop so the opacity animation doesn't conflict with the
+  // touchable area.
+  drawerBackdropTouch: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+  },
+  // The actual drawer panel — slides in from x = -DRAWER_W to x = 0.
+  // `paddingTop` is set inline (insets.top + spacing.md) so the header
+  // clears the status bar on every device.
+  drawer: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: colors.surface,
+    ...shadows.lg,
+  },
+  drawerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.base,
+    paddingBottom: spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.divider,
+  },
+  drawerTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  drawerTitleIconWell: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.tintSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.sm,
+  },
+  drawerCloseBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  drawerList: {
+    paddingVertical: spacing.sm,
+    paddingBottom: spacing['2xl'],
+  },
+  drawerItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.base,
+    gap: spacing.md,
+  },
+  drawerItemIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

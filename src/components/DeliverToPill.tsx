@@ -4,7 +4,7 @@ import Icon from 'react-native-vector-icons/Feather';
 import { useNavigation } from '@react-navigation/native';
 import { Text } from './common';
 import { colors } from '../theme/colors';
-import { radius, spacing } from '../theme/spacing';
+import { spacing } from '../theme/spacing';
 import { useLocationStore, type DeliveryLocation } from '../store';
 
 /**
@@ -31,9 +31,11 @@ export const DeliverToPill: React.FC = () => {
   };
 
   const hasLocation = !!location?.pincode;
-  const subtitle = hasLocation
-    ? buildSubtitle(location)
-    : 'Tap to choose pincode or auto-detect';
+  // Subtitle only when we actually have a real address to show. We used
+  // to display "Tap to choose pincode or auto-detect" as a placeholder
+  // for first-time users, but it added clutter; the title + chevron
+  // already make the affordance obvious.
+  const subtitle = hasLocation ? buildSubtitle(location) : null;
 
   return (
     <Pressable
@@ -71,14 +73,16 @@ export const DeliverToPill: React.FC = () => {
         >
           {hasLocation ? buildTitle(location) : 'Set delivery location'}
         </Text>
-        <Text
-          variant="caption"
-          weight="600"
-          color={colors.textTertiary}
-          numberOfLines={1}
-        >
-          {subtitle}
-        </Text>
+        {subtitle ? (
+          <Text
+            variant="caption"
+            weight="600"
+            color={colors.textTertiary}
+            numberOfLines={1}
+          >
+            {subtitle}
+          </Text>
+        ) : null}
       </View>
     </Pressable>
   );
@@ -96,15 +100,14 @@ function buildSubtitle(loc: DeliveryLocation) {
 }
 
 const styles = StyleSheet.create({
+  // Borderless / transparent — the pill sits directly on the header
+  // gradient. The icon-well + chevron are enough affordance on their
+  // own; no box chrome needed.
   pill: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: spacing.xs,
-    paddingHorizontal: spacing.sm,
-    borderRadius: radius.lg,
-    backgroundColor: colors.tintSoft,
-    borderWidth: 1,
-    borderColor: colors.tintMid,
+    paddingHorizontal: spacing.xs,
     flex: 1,
   },
   iconWell: {
