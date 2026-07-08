@@ -30,6 +30,7 @@ import { radius, shadows, spacing } from '../../theme/spacing';
 import { useUIStore } from '../../store';
 import { toArray } from '../../utils/format';
 import { hasProductImage } from '../../utils/image';
+import { iconForCategory, titleCaseCategory } from '../../utils/categoryIcon';
 import type { Category, GalleryImage, Product } from '../../types';
 
 // Show ~2 cards per screen width — slight peek of the third to hint "scroll me".
@@ -48,6 +49,11 @@ const BRAND_H = Math.round(BRAND_W * 0.4); // ~2.5 : 1 aspect
 // user can tap to dismiss.
 const DRAWER_W = Math.min(320, SCREEN_W * 0.82);
 
+// Must stay in sync with `tabBarStyle.height` in MainTabs.tsx. Used by
+// the side-drawer + backdrop so the drawer panel ends ABOVE the bottom
+// tab bar instead of overlapping it.
+const TABBAR_HEIGHT = 64;
+
 // Curated background palette for category chips — cycled deterministically
 // so the same category gets the same color every render.
 const CATEGORY_COLORS: Array<{ bg: string; icon: string }> = [
@@ -59,16 +65,10 @@ const CATEGORY_COLORS: Array<{ bg: string; icon: string }> = [
   { bg: '#FFE8EE', icon: '#D4486E' },
 ];
 
-const CATEGORY_ICONS = [
-  'shopping-bag',
-  'coffee',
-  'droplet',
-  'package',
-  'gift',
-  'star',
-  'heart',
-  'feather',
-];
+// CATEGORY_ICONS Feather cycle removed — was producing wrong icons
+// (coffee cup for Cashew, droplet for Chilli, etc.). Replaced by
+// `iconForCategory()` in utils/categoryIcon.ts which picks an emoji
+// matching the actual category name.
 
 export const HomeScreen: React.FC = () => {
   const navigation = useNavigation<any>();
@@ -238,7 +238,7 @@ export const HomeScreen: React.FC = () => {
               `mixBlendMode: 'multiply'` knocks out the GIF's baked-in
               white background against the cream gradient. */}
           <FastImage
-            source={require('../../assets/images/logo.gif')}
+            source={require('../../assets/images/brand-logo.gif')}
             style={styles.brandImage}
             resizeMode={FastImage.resizeMode.contain}
           />
@@ -343,7 +343,11 @@ export const HomeScreen: React.FC = () => {
         {/* Best Sellers */}
         {bestSellers.length > 0 ? (
           <>
-            <SectionHeader title="Best Sellers" icon="award" />
+            <SectionHeader
+              title="Best Sellers"
+              subtitle="Most-loved by our customers"
+              icon="award"
+            />
             <HorizontalProducts
               products={bestSellers}
               onPress={goToProduct(navigation)}
@@ -355,7 +359,11 @@ export const HomeScreen: React.FC = () => {
         {/* New Arrivals */}
         {newArrivals.length > 0 ? (
           <>
-            <SectionHeader title="New Arrivals" icon="zap" />
+            <SectionHeader
+              title="New Arrivals"
+              subtitle="Fresh from our farmers"
+              icon="zap"
+            />
             <HorizontalProducts
               products={newArrivals}
               onPress={goToProduct(navigation)}
@@ -432,7 +440,12 @@ export const HomeScreen: React.FC = () => {
           transparent
           animationType="none"
           onRequestClose={closeDrawer}
-          statusBarTranslucent
+          // statusBarTranslucent INTENTIONALLY OMITTED — same crash
+          // root-cause as the WelcomePromoModal: translucent Modal +
+          // react-native-screens + new-architecture races the fragment
+          // manager and throws "No view found for id…". The drawer
+          // panel already pads `paddingTop: insets.top` so the header
+          // clears the status bar correctly without it.
         >
           <View style={StyleSheet.absoluteFill}>
             <Animated.View
@@ -442,9 +455,18 @@ export const HomeScreen: React.FC = () => {
             {/* Backdrop tap-to-close — covers the visible area to the
                 right of the drawer. Using a separate Pressable instead
                 of putting onPress on the backdrop View so the
-                Animated.View opacity transitions don't interfere. */}
+                Animated.View opacity transitions don't interfere.
+                Bottom inset matches the drawer so taps in the tab-bar
+                area aren't swallowed (otherwise the user can't switch
+                tabs while the drawer is open). */}
             <Pressable
-              style={[styles.drawerBackdropTouch, { left: DRAWER_W }]}
+              style={[
+                styles.drawerBackdropTouch,
+                {
+                  left: DRAWER_W,
+                  bottom: TABBAR_HEIGHT + insets.bottom,
+                },
+              ]}
               onPress={closeDrawer}
             />
             <Animated.View
@@ -452,11 +474,17 @@ export const HomeScreen: React.FC = () => {
                 styles.drawer,
                 {
                   width: DRAWER_W,
-                  // Push the header below the status bar / notch. Without
-                  // this the "Categories" title gets painted under the
-                  // clock and the close button overlaps the camera cutout
-                  // on phones with a notch.
+                  // Push the header below the status bar / notch.
                   paddingTop: insets.top + spacing.md,
+                  // CRITICAL: position the PANEL ITSELF above the tab
+                  // bar — not just pad the content. Modal extends to
+                  // the very bottom of the activity; the React
+                  // Navigation tab bar (64dp) renders on top of the
+                  // Modal. Without an explicit `bottom`, the drawer's
+                  // white panel extends behind the tab bar and the two
+                  // visually overlap. Setting bottom = tabBar + system
+                  // gesture inset makes the panel END above the bar.
+                  bottom: TABBAR_HEIGHT + insets.bottom,
                   transform: [{ translateX: drawerX }],
                 },
               ]}
@@ -477,11 +505,11 @@ export const HomeScreen: React.FC = () => {
                   style={styles.drawerCloseBtn}
                   accessibilityLabel="Close categories"
                 >
-                  <Icon name="x" size={20} color={colors.textPrimary} />
+                  <Icon name="x" size={20} color={colors.black} />
                 </Pressable>
               </View>
               {categories.isLoading ? (
-                <View style={{ padding: spacing.base }}>
+                <View style={{ padding: spacing.base, flex: 1 }}>
                   {Array.from({ length: 6 }).map((_, i) => (
                     <Skeleton
                       key={i}
@@ -493,13 +521,25 @@ export const HomeScreen: React.FC = () => {
                 </View>
               ) : (
                 <ScrollView
+                  // flex:1 makes the list area FILL the available
+                  // vertical space inside the drawer panel so the
+                  // footer anchors at the bottom edge with no
+                  // awkward dead gap (industry pattern — Zepto /
+                  // Blinkit / Swiggy drawers always have a
+                  // brand/footer strip pinned to the bottom).
+                  style={{ flex: 1 }}
                   contentContainerStyle={styles.drawerList}
                   showsVerticalScrollIndicator={false}
                 >
                   {categoriesList.map((c, index) => {
                     const color = CATEGORY_COLORS[index % CATEGORY_COLORS.length];
-                    const iconName =
-                      CATEGORY_ICONS[index % CATEGORY_ICONS.length] || 'circle';
+                    // Category-accurate emoji instead of the old
+                    // generic Feather cycle (shopping-bag, coffee,
+                    // droplet) which produced confidently wrong
+                    // icons (a coffee cup for Cashew, droplet for
+                    // Chilli). See utils/categoryIcon.ts.
+                    const emoji = iconForCategory(c.name);
+                    const displayName = titleCaseCategory(c.name);
                     return (
                       <Pressable
                         key={`drawer-cat-${c.id ?? c.categoryId ?? index}`}
@@ -507,7 +547,7 @@ export const HomeScreen: React.FC = () => {
                           closeDrawer();
                           navigation.navigate('Category', {
                             categoryId: (c.id || c.categoryId)!,
-                            name: c.name,
+                            name: displayName,
                           });
                         }}
                         android_ripple={{ color: colors.pressed }}
@@ -519,21 +559,21 @@ export const HomeScreen: React.FC = () => {
                             { backgroundColor: color.bg },
                           ]}
                         >
-                          <Icon name={iconName} size={18} color={color.icon} />
+                          <Text style={styles.drawerItemEmoji}>{emoji}</Text>
                         </View>
                         <Text
                           variant="body"
-                          color={colors.textPrimary}
-                          weight="600"
+                          color={colors.black}
+                          weight="700"
                           style={{ flex: 1 }}
                           numberOfLines={1}
                         >
-                          {c.name}
+                          {displayName}
                         </Text>
                         <Icon
                           name="chevron-right"
                           size={16}
-                          color={colors.textTertiary}
+                          color={colors.primary}
                         />
                       </Pressable>
                     );
@@ -550,6 +590,41 @@ export const HomeScreen: React.FC = () => {
                   ) : null}
                 </ScrollView>
               )}
+              {/* Footer — anchors at bottom of drawer panel to remove
+                  the awkward dead-space the empty bottom of the panel
+                  used to show. Pattern matches Zepto / Blinkit /
+                  Swiggy: a tappable "view all" CTA above a quiet brand
+                  line. Lives OUTSIDE the ScrollView so it always
+                  stays visible no matter how many categories load. */}
+              <Pressable
+                onPress={() => {
+                  closeDrawer();
+                  navigation.navigate('Shop' as any);
+                }}
+                android_ripple={{ color: colors.pressed }}
+                style={styles.drawerFooter}
+              >
+                <View style={styles.drawerFooterCta}>
+                  <Icon name="grid" size={16} color={colors.primary} />
+                  <Text
+                    variant="bodyBold"
+                    color={colors.primary}
+                    weight="700"
+                    style={{ marginLeft: spacing.sm }}
+                  >
+                    View All Categories
+                  </Text>
+                </View>
+                <Text
+                  variant="caption"
+                  color={colors.textTertiary}
+                  weight="600"
+                  align="center"
+                  style={{ marginTop: 4 }}
+                >
+                  Rythu Bidda Naturals · Farm to your door
+                </Text>
+              </Pressable>
             </Animated.View>
           </View>
         </Modal>
@@ -577,20 +652,37 @@ function goToProduct(navigation: any) {
  */
 const SectionHeader: React.FC<{
   title: string;
+  subtitle?: string;
   icon?: string;
   action?: () => void;
   actionLabel?: string;
-}> = ({ title, icon, action, actionLabel }) => (
+}> = ({ title, subtitle, icon, action, actionLabel }) => (
+  // Section header — bumped to h4 size + larger icon well + optional
+  // subtitle line so each section reads as a confident "this is a
+  // curated collection" header rather than generic chrome. Matches
+  // Zepto/Blinkit/BigBasket visual weight.
   <View style={styles.sectionHeader}>
     <View style={styles.sectionTitleRow}>
       {icon ? (
         <View style={styles.sectionIconWell}>
-          <Icon name={icon} size={14} color={colors.primary} />
+          <Icon name={icon} size={16} color={colors.primary} />
         </View>
       ) : null}
-      <Text variant="h5" color={colors.textPrimary} weight="800">
-        {title}
-      </Text>
+      <View style={{ flex: 1 }}>
+        <Text variant="h4" color={colors.textPrimary} weight="800">
+          {title}
+        </Text>
+        {subtitle ? (
+          <Text
+            variant="caption"
+            color={colors.textSecondary}
+            weight="600"
+            style={{ marginTop: 2 }}
+          >
+            {subtitle}
+          </Text>
+        ) : null}
+      </View>
     </View>
     {action && actionLabel ? (
       <Pressable
@@ -774,14 +866,15 @@ const styles = StyleSheet.create({
     paddingTop: spacing.base,
   },
 
-  // Promo strip
+  // Promo strip — extra top space so it floats clearly under the
+  // hero rather than feeling stuck to it.
   promoStrip: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: spacing.base,
-    paddingVertical: 10,
+    paddingVertical: 12,
     borderRadius: radius.full,
-    marginTop: spacing.md,
+    marginTop: spacing.base + spacing.xs,
     marginHorizontal: spacing.base,
     ...shadows.sm,
   },
@@ -794,15 +887,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  // Section header — tightened marginTop so sections aren't drowning
-  // in whitespace. Each section now sits closer to the one above.
+  // Section header — bumped breathing room above each section so the
+  // page reads as deliberate "curated collections" instead of a tight
+  // flat list. Matches the rhythm Zepto / Blinkit / BigBasket use
+  // between their homepage sections.
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: spacing.base,
-    marginTop: spacing.lg,
-    marginBottom: spacing.xs,
+    marginTop: spacing.xl + spacing.xs,
+    marginBottom: spacing.sm,
   },
   sectionTitleRow: {
     flexDirection: 'row',
@@ -810,13 +905,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   sectionIconWell: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: colors.tintSoft,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: spacing.sm,
+    marginRight: spacing.sm + 2,
   },
   sectionActionPill: {
     flexDirection: 'row',
@@ -924,7 +1019,10 @@ const styles = StyleSheet.create({
   },
   drawerList: {
     paddingVertical: spacing.sm,
-    paddingBottom: spacing['2xl'],
+    // No longer needs the giant '2xl' bottom padding — the new
+    // anchored footer below sits at the bottom, so the scroll
+    // content can stop at a normal gap.
+    paddingBottom: spacing.md,
   },
   drawerItem: {
     flexDirection: 'row',
@@ -937,6 +1035,29 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: radius.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  drawerItemEmoji: {
+    fontSize: 18,
+    lineHeight: 22,
+    includeFontPadding: false,
+    textAlign: 'center',
+  },
+  // Pinned-to-bottom footer — replaces the empty dead space the
+  // drawer used to show beneath the last category. Tappable so the
+  // user has a clear "see everything" affordance even when the
+  // category list is short.
+  drawerFooter: {
+    paddingHorizontal: spacing.base,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.base + spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.divider,
+    backgroundColor: colors.tintSoft,
+  },
+  drawerFooterCta: {
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
   },

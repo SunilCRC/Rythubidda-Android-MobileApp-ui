@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
+import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Button, Text } from '../../components/common';
 import { Container } from '../../components/layout/Container';
@@ -11,6 +12,21 @@ import type { CartStackParamList } from '../../navigation/types';
 type Props = NativeStackScreenProps<CartStackParamList, 'OrderSuccess'>;
 
 export const OrderSuccessScreen: React.FC<Props> = ({ navigation }) => {
+  // When the user navigates AWAY from OrderSuccess by ANY means — tab
+  // change, hardware back, "Go Home", "View Orders" — collapse the
+  // Cart-tab stack back to CartMain. Otherwise OrderSuccess remains
+  // on top of the cart stack and the next time the user taps the
+  // Cart tab they see the previous order's success page instead of
+  // the empty cart. (That's the "showing the Previous Order page"
+  // bug reported by testers.)
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        navigation.reset({ index: 0, routes: [{ name: 'CartMain' }] });
+      };
+    }, [navigation]),
+  );
+
   const goHome = () => navigation.getParent()?.navigate('HomeTab', { screen: 'HomeMain' });
   const goOrders = () => navigation.getParent()?.navigate('OrdersTab', { screen: 'OrdersMain' });
 

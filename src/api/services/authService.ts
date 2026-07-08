@@ -12,8 +12,18 @@ export const authService = {
   login: (body: LoginRequest) =>
     apiPost<AuthSuccessData>(ENDPOINTS.LOGIN, body),
 
+  // Same wire-shape fix as `updateProfile` below — backend Customer DTO
+  // uses ALL-LOWERCASE `firstname`/`lastname`. Sending camelCase fields
+  // here caused Jackson to bind both as null, the row to save with no
+  // name, and signup to either error out or return an unusable account.
+  // The form keeps its camelCase shape; we translate at the boundary.
   signup: (body: SignupRequest) =>
-    apiPost<AuthSuccessData>(ENDPOINTS.SIGNUP, body),
+    apiPost<AuthSuccessData>(ENDPOINTS.SIGNUP, {
+      firstname: body.firstName,
+      lastname: body.lastName,
+      phone: body.phone,
+      password: body.password,
+    }),
 
   verifyOtp: (customerId: number, otp: string) =>
     apiPost<AuthSuccessData>(ENDPOINTS.VERIFY_OTP, undefined, {

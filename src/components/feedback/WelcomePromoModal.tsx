@@ -3,6 +3,7 @@ import {
   Animated,
   Dimensions,
   Easing,
+  InteractionManager,
   Modal,
   Pressable,
   StyleSheet,
@@ -46,13 +47,26 @@ export const WelcomePromoModal: React.FC = () => {
   const opacity = useRef(new Animated.Value(0)).current;
 
   // Decide whether to show on mount.
+  //
+  // Mounting a native Modal mid-navigation has been observed to race
+  // react-native-screens' fragment manager and crash the app:
+  //   "No view found for id 0x… for fragment ScreenFragment"
+  // `InteractionManager.runAfterInteractions` defers the work until
+  // every pending UI animation / navigation transition has finished —
+  // i.e. until the navigator is fully settled — which eliminates that
+  // race. The 500 ms delay still runs ON TOP of that, so the user
+  // still sees the home screen for a beat before the modal appears.
   useEffect(() => {
     if (shownThisSession) return;
     shownThisSession = true;
-    // Small delay so the home screen has time to settle visually
-    // before we pop a modal on top — feels intentional, not jarring.
-    const t = setTimeout(() => setVisible(true), 500);
-    return () => clearTimeout(t);
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const handle = InteractionManager.runAfterInteractions(() => {
+      timer = setTimeout(() => setVisible(true), 500);
+    });
+    return () => {
+      handle.cancel?.();
+      if (timer) clearTimeout(timer);
+    };
   }, []);
 
   // Play the entry spring whenever the modal becomes visible.
@@ -99,7 +113,15 @@ export const WelcomePromoModal: React.FC = () => {
     <Modal
       visible={visible}
       transparent
-      statusBarTranslucent
+      // statusBarTranslucent INTENTIONALLY OMITTED. Combined with
+      // react-native-screens + the new architecture (newArchEnabled=true
+      // in gradle.properties), translucent modals racing the fragment
+      // manager during initial navigation cause:
+      //   "No view found for id 0x… for fragment ScreenFragment"
+      // crash at app launch. Without statusBarTranslucent the modal
+      // doesn't extend into the status-bar area — that's a cosmetic
+      // trade-off; the modal's centred card still looks correct and
+      // the app no longer crashes.
       animationType="none"
       onRequestClose={close}
     >

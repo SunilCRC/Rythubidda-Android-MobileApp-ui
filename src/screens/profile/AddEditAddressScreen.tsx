@@ -305,7 +305,15 @@ export const AddEditAddressScreen: React.FC<Props> = ({ route, navigation }) => 
     }
     setSearching(true);
     debounceRef.current = setTimeout(async () => {
-      const r = await gAutocomplete(trimmed, sessionTokenRef.current);
+      // Bias suggestions toward the current pin position so the user
+      // gets results near where they've already placed the map pin.
+      // E.g. pin sitting in Hyderabad's Miyapur → typing "Miyapur"
+      // ranks Hyderabad's Miyapur first, not the identically-named
+      // place on the Sangareddy border.
+      const bias = pinCoords
+        ? { latitude: pinCoords.latitude, longitude: pinCoords.longitude }
+        : undefined;
+      const r = await gAutocomplete(trimmed, sessionTokenRef.current, bias);
       setSearching(false);
       if (r.ok) setSuggestions(r.suggestions);
       else setSuggestions([]);
@@ -318,18 +326,54 @@ export const AddEditAddressScreen: React.FC<Props> = ({ route, navigation }) => 
     try {
       const r = await placeDetails(s.placeId, sessionTokenRef.current);
       sessionTokenRef.current = createSessionToken(); // mint a fresh session
-      if (!r.ok || !r.details.pincode) {
+      if (!r.ok) {
         showToast.error("Couldn't read that address", 'Try a different result or drag the pin.');
         return;
       }
-      const d = r.details;
+      // Trust Place Details for address fields. Only fall back to
+      // reverse-geocode when pincode is missing (common for POIs,
+      // intersections, rural addresses). See LocationPickerScreen for
+      // the full rationale — short version: near administrative
+      // boundaries the locality's centroid sometimes sits in the
+      // neighbouring revenue village. Reverse-geocoding those coords
+      // returns the neighbour's pincode, which is wrong for the
+      // locality the user picked. Place Details' own postal_code is
+      // the correct one.
+      let d = r.details;
+      if (!d.pincode && typeof d.latitude === 'number' && typeof d.longitude === 'number') {
+        const rev = await reverseGeocode(d.latitude, d.longitude);
+        if (rev.ok && rev.address.pincode) {
+          d = {
+            ...d,
+            pincode: rev.address.pincode,
+            city: d.city || rev.address.city,
+            state: d.state || rev.address.state,
+            area: d.area || rev.address.area,
+            road: d.road || rev.address.road,
+          };
+        }
+      }
+      if (!d.pincode) {
+        showToast.error(
+          "Couldn't read that address",
+          'No pincode available for this spot. Try a different result or drag the pin.',
+        );
+        return;
+      }
       setPinCoords({ latitude: d.latitude, longitude: d.longitude });
       setResolved({
-        pincode: d.pincode!, // narrowed by the !r.details.pincode guard above
+        pincode: d.pincode,
         city: d.city,
         state: d.state,
         country: d.country,
-        area: d.area,
+        // Respect the user's explicit pick — see LocationPickerScreen
+        // for the full rationale. Short version: if the user searched
+        // "Miyapur" and tapped that suggestion, save "Miyapur" as the
+        // area, not whatever Google's reverse-geocode derives from
+        // the resulting coordinates (which, near the Miyapur /
+        // Ameenpur revenue-village border, comes back as "Ameenpur"
+        // because that's the legal local-body name).
+        area: s.primaryText || d.area,
         road: d.road,
         formatted: d.formatted,
         latitude: d.latitude,
@@ -429,7 +473,7 @@ export const AddEditAddressScreen: React.FC<Props> = ({ route, navigation }) => 
             <TextInput
               style={styles.searchInput}
               placeholder="Search area, street, or landmark"
-              placeholderTextColor={colors.textTertiary}
+              placeholderTextColor={colors.palette.neutral[400]}
               value={searchQuery}
               onChangeText={setSearchQuery}
               autoCorrect={false}
@@ -630,8 +674,12 @@ const styles = StyleSheet.create({
     flex: 1,
     fontFamily: fonts.regular,
     fontSize: fontSizes.base,
-    fontWeight: '600',
-    color: colors.textPrimary,
+    // See Input.tsx — only Montserrat-Regular is bundled; weight 600
+    // renders as synthetic faux-bold that looks pale. Bumped to 700
+    // + pure black + includeFontPadding:false so typed text reads dark.
+    fontWeight: '700',
+    color: '#000000',
+    includeFontPadding: false,
     padding: 0,
   },
 

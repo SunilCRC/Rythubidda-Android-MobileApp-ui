@@ -213,7 +213,14 @@ export const ProfileScreen: React.FC = () => {
                       <Text
                         variant="body"
                         color={item.danger ? colors.error : colors.black}
-                        weight="600"
+                        // Bumped from 600 → 700. Only Montserrat-Regular
+                        // is bundled, so weight 600 renders as
+                        // synthetic faux-bold which Android downstreams
+                        // (esp. Samsung OneUI / MIUI) draw with thin
+                        // strokes — the labels then read as pale grey
+                        // even though the color is pure black. Same
+                        // fix we applied to inputs in dev.11.
+                        weight="700"
                         style={styles.menuLabel}
                       >
                         {item.label}
@@ -278,6 +285,10 @@ const styles = StyleSheet.create({
     flex: 1,
     marginLeft: spacing.md,
     fontSize: 15.5,
+    // Kill Android's font padding for the same reason we did in the
+    // input components — it visually thins the stroke and makes the
+    // label read paler than the color value implies.
+    includeFontPadding: false,
   },
   // Indented divider so it lines up under the label, not the icon-well —
   // the icons remain visually grouped while the dividers feel cleaner.

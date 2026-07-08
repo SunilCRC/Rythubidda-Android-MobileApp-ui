@@ -28,7 +28,16 @@ export const CategoryScreen: React.FC<Props> = ({ route, navigation }) => {
   return (
     <Container edges={['top']}>
       <ScreenHeader title={name} />
-      {isLoading ? (
+      {/* Show skeleton while EITHER react-query is still loading OR
+          we haven't received the response yet. The old check used
+          `isLoading` alone, which can transition to `false` for a
+          single render before `data` is defined — during that
+          render we'd fall through to the `products.length === 0`
+          branch and briefly flash "No products yet" before the
+          list rendered. Testers saw this as "the page shows an
+          empty screen before products appear". Guarding on `!data`
+          keeps the skeleton up until real data lands. */}
+      {isLoading || !data ? (
         <View style={styles.skeletonGrid}>
           {Array.from({ length: 6 }).map((_, i) => (
             <Skeleton

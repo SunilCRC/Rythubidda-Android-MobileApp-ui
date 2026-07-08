@@ -142,10 +142,29 @@ function pick(
   return undefined;
 }
 
+/**
+ * Build a ResolvedAddress from Google's geocoder response.
+ *
+ * IMPORTANT: the lat/lng we return are ALWAYS the caller-supplied
+ * `inputLat` / `inputLng`, NOT `result.geometry.location`. Reason:
+ *   • Reverse geocode: the input is the user's actual GPS / pin
+ *     position. Google's result geometry is the CENTROID of the
+ *     matched address (a building, road, or postal-code area) and is
+ *     routinely 100–500m offset from the user's true position.
+ *     Overwriting with the centroid is the root cause of the
+ *     "Google Maps shows me 300m away" bug.
+ *   • Forward geocode: the caller has already extracted
+ *     `result.geometry.location` and passes it AS the input — so the
+ *     return value still matches the geocoder's geometry (which is
+ *     the best estimate when you only have a text address).
+ *
+ * Either way, treating the input as authoritative gives the caller
+ * what it asked about, never something Google "rounded" to.
+ */
 function parseResults(
   json: GeocodeResponse,
-  fallbackLat: number,
-  fallbackLng: number,
+  inputLat: number,
+  inputLng: number,
 ): ResolvedAddress | null {
   const result = json.results?.[0];
   if (!result?.address_components) return null;
@@ -163,8 +182,9 @@ function parseResults(
     road: pick(c, 'route'),
     formatted: result.formatted_address,
     placeId: result.place_id,
-    latitude: result.geometry?.location?.lat ?? fallbackLat,
-    longitude: result.geometry?.location?.lng ?? fallbackLng,
+    // Preserve the caller's input — see header comment.
+    latitude: inputLat,
+    longitude: inputLng,
   };
 }
 

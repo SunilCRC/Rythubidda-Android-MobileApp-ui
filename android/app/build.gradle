@@ -94,8 +94,8 @@ android {
         // Bumped for the first internal tester build. versionCode must
         // increase with every install testers see; versionName is the
         // human-readable label they'll quote in bug reports.
-        versionCode 2
-        versionName "1.0.0-dev"
+        versionCode 18
+        versionName "1.0.0-dev.17"
 
         // Inject GOOGLE_MAPS_API_KEY from .env (already loaded by dotenv.gradle
         // above) into the AndroidManifest as ${GOOGLE_MAPS_API_KEY}, so the

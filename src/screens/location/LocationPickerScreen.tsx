@@ -85,6 +85,13 @@ export const LocationPickerScreen: React.FC<Props> = ({
 }) => {
   const setLocation = useLocationStore(s => s.setLocation);
   const recents = useLocationStore(s => s.recents);
+  // Existing saved location (if any) — used as the autocomplete bias
+  // center so suggestions near where the user already lives /
+  // delivers rank first. This is what fixes Hyderabad's "Miyapur"
+  // ambiguity — once the user has any Hyderabad address on file, the
+  // next "Miyapur" search ranks Hyderabad's Miyapur above the
+  // identically-named one on the Sangareddy border.
+  const savedLocation = useLocationStore(s => s.location);
   const isAuth = useIsAuthenticated();
   const inputRef = useRef<TextInput>(null);
 
@@ -176,7 +183,25 @@ export const LocationPickerScreen: React.FC<Props> = ({
     }
     setSearching(true);
     debounceRef.current = setTimeout(async () => {
-      const r = await gAutocomplete(trimmed, sessionTokenRef.current);
+      // Build a bias center from the most recent strong signal we have
+      // for where the user is. Preference order:
+      //   1. Live GPS preview (`detectedPreview`) — they just tapped
+      //      "Use current location" so this is the freshest truth.
+      //   2. Saved delivery location (`savedLocation`) — set on a
+      //      previous session, persists across launches.
+      // Skip the bias entirely if we have neither — the default
+      // Hyderabad-metro rectangle in `autocomplete()` takes over.
+      const bias =
+        detectedPreview &&
+        typeof detectedPreview.latitude === 'number' &&
+        typeof detectedPreview.longitude === 'number'
+          ? { latitude: detectedPreview.latitude, longitude: detectedPreview.longitude }
+          : savedLocation &&
+            typeof savedLocation.latitude === 'number' &&
+            typeof savedLocation.longitude === 'number'
+          ? { latitude: savedLocation.latitude, longitude: savedLocation.longitude }
+          : undefined;
+      const r = await gAutocomplete(trimmed, sessionTokenRef.current, bias);
       if (r.ok) {
         setSuggestions(r.suggestions);
       } else {
@@ -208,14 +233,52 @@ export const LocationPickerScreen: React.FC<Props> = ({
       const r = await placeDetails(s.placeId, sessionTokenRef.current);
       // Mint a fresh session for the next typing session.
       sessionTokenRef.current = createSessionToken();
-      if (!r.ok || !r.details.pincode) {
+      if (!r.ok) {
         showToast.error(
           "Couldn't read that address",
           'Try a different result or use GPS.',
         );
         return;
       }
-      const d = r.details;
+      // Trust Place Details for the address fields — Google has
+      // already attached the locality's official pincode + city +
+      // state to the placeId the user picked. Only fall back to
+      // reverse-geocoding the Place's lat/lng when Places didn't
+      // populate the pincode (common for some POIs, intersections,
+      // and rural Indian addresses). This is what Google Maps itself
+      // does — it shows the place's metadata, not what's geographically
+      // at the exact pin coords.
+      //
+      // Why we don't reverse-geocode unconditionally: near
+      // administrative boundaries (Miyapur/Ameenpur, Hi-Tech City/
+      // Madhapur, etc.) the locality's centroid coordinate can sit a
+      // few hundred metres into the neighbouring revenue village.
+      // Reverse-geocoding those coords returns the neighbour's
+      // pincode, which is more accurate FOR THAT COORD but wrong for
+      // the locality the user actually picked. Place Details'
+      // postal_code is the correct one for the place itself.
+      let d = r.details;
+      if (!d.pincode && typeof d.latitude === 'number' && typeof d.longitude === 'number') {
+        const rev = await reverseGeocode(d.latitude, d.longitude);
+        if (rev.ok && rev.address.pincode) {
+          d = {
+            ...d,
+            pincode: rev.address.pincode,
+            city: d.city || rev.address.city,
+            state: d.state || rev.address.state,
+            area: d.area || rev.address.area,
+            road: d.road || rev.address.road,
+          };
+        }
+      }
+      if (!d.pincode) {
+        // Even reverse-geocoded result has no pincode — truly unusable.
+        showToast.error(
+          "Couldn't read that address",
+          'No pincode available for this spot. Try a different result or use GPS.',
+        );
+        return;
+      }
       // Distance-based serviceability — uses the live delivery_center
       // list, NOT the legacy pincodes_validation table.
       const { serviceable } = checkServiceableByDistance(d.latitude, d.longitude);
@@ -230,7 +293,25 @@ export const LocationPickerScreen: React.FC<Props> = ({
         pincode: d.pincode!,
         city: d.city,
         state: d.state,
-        area: d.area,
+        // Respect the user's explicit pick — they searched "Miyapur"
+        // and tapped the suggestion that said "Miyapur", so that's
+        // the area we should remember, not whatever Google's
+        // reverse-geocoder derives from the resulting coordinates.
+        //
+        // Why this matters: in Hyderabad, the Miyapur/Ameenpur
+        // revenue-village boundary cuts through what locals call
+        // "Miyapur". Coords landing on the western edge resolve to
+        // `locality: "Ameenpur"` (the legal local body name +
+        // pincode 502033, Sangareddy district), even though the user
+        // explicitly searched "Miyapur". Before this fix the header
+        // ended up showing "Ameenpur 502033" with "Miyapur" only in
+        // the formatted-address subtitle — looked broken to the
+        // user. Same pattern hits Hi-Tech City / Madhapur, Kondapur /
+        // Botanical Gardens, and a dozen other Hyderabad fringes.
+        //
+        // Falling back to `d.area` only when primaryText is
+        // unexpectedly empty (defensive — shouldn't happen).
+        area: s.primaryText || d.area,
         road: d.road,
         formatted: d.formatted,
         latitude: d.latitude,
@@ -241,7 +322,15 @@ export const LocationPickerScreen: React.FC<Props> = ({
       };
       await setLocation(loc);
       haptics.success();
-      showToast.success('Delivery location set', `${d.area ?? d.city ?? ''} ${d.pincode}`.trim());
+      // Use `loc.area` (which respects the user's typed pick via
+      // primaryText), NOT `d.area` — `d.area` is the reverse-geocoded
+      // legal-village name (e.g. "Ameenpur"), which is exactly the
+      // confusing-to-the-user label we just worked hard to override
+      // upstream. Showing it in the toast undoes that work.
+      showToast.success(
+        'Delivery location set',
+        `${loc.area ?? loc.city ?? ''} ${loc.pincode}`.trim(),
+      );
       navigation.goBack();
     } finally {
       setSearching(false);
@@ -530,7 +619,7 @@ export const LocationPickerScreen: React.FC<Props> = ({
               ref={inputRef}
               style={styles.searchInput}
               placeholder="Search area, street, or 6-digit pincode"
-              placeholderTextColor={colors.textTertiary}
+              placeholderTextColor={colors.palette.neutral[400]}
               value={query}
               onChangeText={setQuery}
               autoCorrect={false}
@@ -846,8 +935,12 @@ const styles = StyleSheet.create({
     flex: 1,
     fontFamily: fonts.regular,
     fontSize: fontSizes.base,
-    fontWeight: '600',
-    color: colors.textPrimary,
+    // See Input.tsx — only Montserrat-Regular is bundled; weight 600
+    // renders as synthetic faux-bold that looks pale. Bumped to 700
+    // + pure black + includeFontPadding:false so typed text reads dark.
+    fontWeight: '700',
+    color: '#000000',
+    includeFontPadding: false,
     padding: 0,
   },
   searchSubmit: {

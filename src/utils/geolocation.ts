@@ -64,21 +64,61 @@ function loadModule(): GeolocationModule | null {
 interface Options {
   /** Defaults to true. Falls back to network-based positioning on failure. */
   highAccuracy?: boolean;
-  /** Maximum time we'll wait for a fix, in ms. Defaults to 15s. */
+  /** Maximum time we'll wait for a fix, in ms. Defaults to 20s — gives
+   *  GPS enough time to lock on satellites instead of returning a
+   *  rougher cell-tower / Wi-Fi fix. */
   timeoutMs?: number;
-  /** Accept a cached fix up to this many ms old. Defaults to 60s. */
+  /** Accept a cached fix up to this many ms old. Defaults to 0 — never
+   *  accept stale fixes. Cached fixes from other apps are the #1 cause
+   *  of "the app says I'm 300m away from where I actually am". */
   maxAgeMs?: number;
+  /** When set, keep watching for a better fix until accuracy (in metres)
+   *  is at or below this value, or the overall timeout fires. Default:
+   *  50m, which is fine for delivery-address detection. */
+  targetAccuracyM?: number;
+}
+
+interface GeolocationWatchModule extends GeolocationModule {
+  watchPosition: (
+    success: (pos: { coords: Coords; timestamp: number }) => void,
+    error: (err: { code: number; message: string }) => void,
+    opts?: {
+      enableHighAccuracy?: boolean;
+      distanceFilter?: number;
+      interval?: number;
+      fastestInterval?: number;
+      forceRequestLocation?: boolean;
+      forceLocationManager?: boolean;
+      showLocationDialog?: boolean;
+    },
+  ) => number;
+  clearWatch: (id: number) => void;
 }
 
 /**
- * Get a single GPS reading. Always resolves — never throws — so callers
- * can just branch on `result.ok`.
+ * Get a high-accuracy GPS reading. Always resolves — never throws — so
+ * callers can just branch on `result.ok`.
+ *
+ * Strategy (the previous single-shot version returned the FIRST fix the
+ * OS handed us, which on Android is routinely a cached / cell-tower /
+ * Wi-Fi fix with 300–500m accuracy — exactly the symptom the user
+ * reported):
+ *
+ *   1. Open a watcher with `enableHighAccuracy: true`, distanceFilter 0,
+ *      so it streams every new fix as the GPS chip locks more satellites.
+ *   2. Track the best (lowest `accuracy`) fix we've seen so far.
+ *   3. As soon as a fix arrives with accuracy ≤ targetAccuracyM, stop
+ *      watching and return it.
+ *   4. If the overall timeout fires first, return whatever the best fix
+ *      is so far (even if it's worse than the target — beats failing).
+ *   5. `maximumAge: 0` and `forceRequestLocation: true` ensure we never
+ *      accept a stale fix from FusedLocation's cache.
  */
 export function getCurrentLocation(
   opts: Options = {},
 ): Promise<GetLocationResult> {
-  const mod = loadModule();
-  if (!mod) {
+  const mod = loadModule() as GeolocationWatchModule | null;
+  if (!mod || typeof mod.watchPosition !== 'function') {
     return Promise.resolve({
       ok: false,
       error: 'unavailable',
@@ -87,40 +127,85 @@ export function getCurrentLocation(
   }
   const {
     highAccuracy = true,
-    timeoutMs = 15000,
-    maxAgeMs = 60000,
+    timeoutMs = 20000,
+    targetAccuracyM = 50,
   } = opts;
 
   return new Promise(resolve => {
     let settled = false;
+    let watchId: number | null = null;
+    let best: Coords | null = null;
+
     const finish = (r: GetLocationResult) => {
       if (settled) return;
       settled = true;
+      if (watchId !== null) {
+        try { mod.clearWatch(watchId); } catch { /* ignore */ }
+      }
+      if (timer) clearTimeout(timer);
       resolve(r);
     };
 
+    // Overall budget. If even one fix has arrived by then we return it;
+    // otherwise we fail with `timeout`.
+    const timer = setTimeout(() => {
+      if (best) {
+        finish({ ok: true, coords: best });
+      } else {
+        finish({ ok: false, error: 'timeout' });
+      }
+    }, timeoutMs);
+
     try {
-      mod.getCurrentPosition(
-        pos => finish({ ok: true, coords: { ...pos.coords, timestamp: pos.timestamp } }),
+      watchId = mod.watchPosition(
+        pos => {
+          const c: Coords = { ...pos.coords, timestamp: pos.timestamp };
+          // Keep the most accurate fix so far. `accuracy` may be
+          // undefined on some Android OEMs — fall back to "trust it" in
+          // that case.
+          const a = c.accuracy ?? 0;
+          const ba = best?.accuracy ?? Number.POSITIVE_INFINITY;
+          if (!best || a < ba) {
+            best = c;
+            if (__DEV__) {
+              // eslint-disable-next-line no-console
+              console.log(`[geo] fix lat=${c.latitude.toFixed(6)} lng=${c.longitude.toFixed(6)} acc=${a}m`);
+            }
+          }
+          // Good enough — return immediately.
+          if (a > 0 && a <= targetAccuracyM) {
+            finish({ ok: true, coords: c });
+          }
+        },
         err => {
-          // Map react-native-geolocation-service error codes to our enum.
-          // Codes: 1 PERMISSION_DENIED, 2 POSITION_UNAVAILABLE, 3 TIMEOUT, 5 PLAY_SERVICE_NOT_AVAILABLE
+          // PERMISSION_DENIED + POSITION_UNAVAILABLE → bail fast.
+          // Other errors: keep waiting — sometimes the first fix fails
+          // and the next one comes through.
           const map: Record<number, GeolocationError> = {
             1: 'permission_denied',
             2: 'position_unavailable',
             3: 'timeout',
             5: 'unavailable',
           };
-          finish({
-            ok: false,
-            error: map[err?.code] ?? 'unknown',
-            message: err?.message,
-          });
+          if (err?.code === 1 || err?.code === 2 || err?.code === 5) {
+            finish({
+              ok: false,
+              error: map[err.code] ?? 'unknown',
+              message: err?.message,
+            });
+          }
+          if (__DEV__) {
+            // eslint-disable-next-line no-console
+            console.warn('[geo] watch error', err?.code, err?.message);
+          }
         },
         {
           enableHighAccuracy: highAccuracy,
-          timeout: timeoutMs,
-          maximumAge: maxAgeMs,
+          distanceFilter: 0,
+          // How often the OS reports updates while satellites lock on.
+          // 1s is generous — usually a good fix arrives in 2-4 reports.
+          interval: 1000,
+          fastestInterval: 500,
           forceRequestLocation: true,
           showLocationDialog: true,
         },

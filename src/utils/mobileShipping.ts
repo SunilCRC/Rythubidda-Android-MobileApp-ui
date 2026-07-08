@@ -33,6 +33,22 @@ export interface ShippingResult {
   isFree: boolean;
   /** Name of the nearest store — surfaced as "X km from <NAME>". */
   centerName: string;
+  /**
+   * Coords of the nearest center — callers fetch driving distance to
+   * THIS specific point so the user-facing "X km from <store>" line
+   * matches what Google Maps shows for the same route. Without
+   * exposing these, the caller would have to re-implement
+   * nearest-center selection.
+   */
+  centerLat?: number;
+  centerLng?: number;
+  /**
+   * Per-km rate that was actually applied (after per-center override
+   * + global fallback resolution). Exposed so the caller can
+   * recompute cost when it swaps Haversine distance for driving
+   * distance.
+   */
+  ratePerKm?: number;
 }
 
 /** Great-circle distance between two WGS84 points (km). */
@@ -103,6 +119,12 @@ export function calculateShippingMobile(
     }
   }
 
+  // Per-store rate beats global rate beats the hardcoded constant.
+  const rate =
+    typeof nearest.perKmRate === 'number'
+      ? nearest.perKmRate
+      : globalPerKmRate ?? SHIPPING_CONFIG.perKmRate;
+
   // Out of range: customer is farther than the NEAREST store's radius.
   if (minDistance > nearest.maxRadiusKm) {
     return {
@@ -111,6 +133,9 @@ export function calculateShippingMobile(
       cost: 0,
       isFree: false,
       centerName: nearest.name,
+      centerLat: nearest.latitude,
+      centerLng: nearest.longitude,
+      ratePerKm: rate,
     };
   }
 
@@ -123,14 +148,11 @@ export function calculateShippingMobile(
       cost: 0,
       isFree: true,
       centerName: nearest.name,
+      centerLat: nearest.latitude,
+      centerLng: nearest.longitude,
+      ratePerKm: rate,
     };
   }
-
-  // Per-store rate beats global rate beats the hardcoded constant.
-  const rate =
-    typeof nearest.perKmRate === 'number'
-      ? nearest.perKmRate
-      : globalPerKmRate ?? SHIPPING_CONFIG.perKmRate;
 
   return {
     applicable: true,
@@ -138,5 +160,8 @@ export function calculateShippingMobile(
     cost: Math.round(rate * minDistance),
     isFree: false,
     centerName: nearest.name,
+    centerLat: nearest.latitude,
+    centerLng: nearest.longitude,
+    ratePerKm: rate,
   };
 }

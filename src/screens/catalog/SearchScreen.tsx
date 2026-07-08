@@ -23,6 +23,24 @@ import type { Product } from '../../types';
 
 const RECENT_LIMIT = 10;
 
+// Zepto / Blinkit-style rotating placeholders so the search bar
+// doubles as a discovery cue. Cycled every 2.4 s while the input is
+// empty and unfocused. Pure presentation — does NOT affect the
+// query value.
+const PLACEHOLDER_ROTATION = [
+  'Search for rice',
+  'Search for cashew',
+  'Search for sunflower oil',
+  'Search for chilli powder',
+  'Search for almonds',
+  'Search for turmeric',
+  'Search for ghee',
+  'Search for raisins',
+  'Search for dal',
+  'Search for jaggery',
+];
+const PLACEHOLDER_INTERVAL_MS = 2400;
+
 export const SearchScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const [query, setQuery] = useState('');
@@ -31,7 +49,19 @@ export const SearchScreen: React.FC = () => {
   const [results, setResults] = useState<Product[]>([]);
   const [loading, setLoading] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
+  const [placeholderIdx, setPlaceholderIdx] = useState(0);
   const inputRef = useRef<TextInput>(null);
+
+  // Rotate placeholder while the user hasn't started typing and isn't
+  // focused on the input. We freeze the rotation as soon as they
+  // focus so they don't see the hint shift mid-tap (jumpy UX).
+  useEffect(() => {
+    if (query || isFocused) return;
+    const t = setInterval(() => {
+      setPlaceholderIdx(i => (i + 1) % PLACEHOLDER_ROTATION.length);
+    }, PLACEHOLDER_INTERVAL_MS);
+    return () => clearInterval(t);
+  }, [query, isFocused]);
 
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEYS.RECENT_SEARCHES)
@@ -101,8 +131,15 @@ export const SearchScreen: React.FC = () => {
           <TextInput
             ref={inputRef}
             style={styles.input}
-            placeholder="Search products..."
-            placeholderTextColor={colors.textSecondary}
+            placeholder={PLACEHOLDER_ROTATION[placeholderIdx]}
+            // Use a clearly muted grey so the placeholder NEVER reads
+            // as already-typed input. Previously textSecondary
+            // (#24241F — near-black) which on white background was
+            // visually indistinguishable from real query text — that
+            // was the "looks like already entered text" complaint.
+            // neutral[400] sits well below the legibility floor for
+            // body text but is perfect for a placeholder hint.
+            placeholderTextColor={colors.palette.neutral[400]}
             selectionColor={colors.primary}
             cursorColor={colors.primary}
             value={query}
@@ -243,8 +280,13 @@ const styles = StyleSheet.create({
     flex: 1,
     fontFamily: fonts.regular,
     fontSize: fontSizes.base,
-    fontWeight: fontWeights.semibold,
-    color: colors.textPrimary,
+    // See Input.tsx — Montserrat has no bundled semibold/bold variant,
+    // so weight 600 renders as synthetic faux-bold that looks pale on
+    // Android. Bumped to bold (700) + pure black + includeFontPadding
+    // off so the typed query reads dark and crisp.
+    fontWeight: fontWeights.bold,
+    color: '#000000',
+    includeFontPadding: false,
     padding: 0,
   },
   content: { flex: 1, padding: spacing.base },

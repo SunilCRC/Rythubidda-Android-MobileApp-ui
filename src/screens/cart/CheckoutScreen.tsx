@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -6,7 +6,8 @@ import {
   View,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useQueryClient } from '@tanstack/react-query';
 import RazorpayCheckout from 'react-native-razorpay';
 import {
   Button,
@@ -27,6 +28,7 @@ import {
 } from '../../api/services';
 import { forwardGeocode } from '../../utils/googleGeocode';
 import { calculateShippingMobile } from '../../utils/mobileShipping';
+import { getDrivingDistanceKm } from '../../utils/googleDistance';
 import { formatKm } from '../../utils/format';
 import {
   useAuthStore,
@@ -67,20 +69,42 @@ export const CheckoutScreen: React.FC = () => {
   const [processing, setProcessing] = useState(false);
   const [payMethod, setPayMethod] = useState<PayOption>('RAZORPAY');
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const raw = await addressService.list();
-        const list = toArray<CustomerAddress>(raw);
-        setAddresses(list);
-        if (list[0]?.customerAddressId) setAddressId(list[0].customerAddressId);
-      } catch (e: any) {
-        showToast.error('Failed to load addresses', e?.message);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
+  // React Query client — used to invalidate the orders cache after a
+  // successful order so OrdersScreen re-fetches and the user's new
+  // order is visible immediately instead of after a manual refresh.
+  const queryClient = useQueryClient();
+
+  // Re-load the address list every time Checkout REGAINS FOCUS — not
+  // just on mount. Without this, when the user navigates from Checkout
+  // → AddEditAddress, saves a new address, and pops back, the freshly-
+  // saved address doesn't appear in the list until they refresh the
+  // app. The new address auto-selects so checkout can proceed straight
+  // away.
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      (async () => {
+        try {
+          const raw = await addressService.list();
+          if (cancelled) return;
+          const list = toArray<CustomerAddress>(raw);
+          setAddresses(list);
+          // Keep the existing selection if it's still in the list.
+          // Otherwise pick the FIRST entry — which for fresh adds is
+          // the newest row in most backends.
+          setAddressId(prev => {
+            if (prev && list.some(a => a.customerAddressId === prev)) return prev;
+            return list[0]?.customerAddressId;
+          });
+        } catch (e: any) {
+          if (!cancelled) showToast.error('Failed to load addresses', e?.message);
+        } finally {
+          if (!cancelled) setLoading(false);
+        }
+      })();
+      return () => { cancelled = true; };
+    }, []),
+  );
 
   const selectedAddress = addresses.find(a => a.customerAddressId === addressId);
 
@@ -187,18 +211,57 @@ export const CheckoutScreen: React.FC = () => {
             '· centers in store:', shippingConfig?.centers?.length ?? 0);
         }
 
+        // Swap straight-line (Haversine) distance for the REAL driving
+        // distance via Google Distance Matrix. Haversine is fine for
+        // picking the nearest center (driving distance correlates), but
+        // the user-facing "X km from <store>" line + the cost calc must
+        // match what Google Maps shows for the same route — otherwise
+        // a 19 km Haversine reads as a 30 km drive, the displayed
+        // number looks broken, and shipping is mis-priced.
+        //
+        // getDrivingDistanceKm NEVER throws — falls back to
+        // Haversine × 1.4 if the API is unreachable, so checkout still
+        // works in offline / key-missing scenarios.
+        let drivingKm = result.distanceKm;
+        if (
+          typeof result.centerLat === 'number' &&
+          typeof result.centerLng === 'number'
+        ) {
+          const dm = await getDrivingDistanceKm(
+            result.centerLat,
+            result.centerLng,
+            lat!,
+            lng!,
+          );
+          drivingKm = dm.km;
+          if (__DEV__) {
+            // eslint-disable-next-line no-console
+            console.log(
+              `[checkout] driving distance: ${drivingKm.toFixed(2)} km (source=${dm.source}) ` +
+              `vs Haversine ${result.distanceKm.toFixed(2)} km`,
+            );
+          }
+        }
+
         if (!result.applicable) {
           setShippingCost(undefined);
-          setDistanceKm(result.distanceKm);
+          // Even on out-of-range, show driving distance so the user
+          // sees an accurate "you're X km away" message.
+          setDistanceKm(drivingKm);
           setCenterName(result.centerName);
           setFreeDelivery(false);
           setOutOfRange(true);
           return;
         }
 
-        setShippingCost(result.cost);
+        // Recompute cost using driving distance + the resolved per-km
+        // rate from the calculator (per-center override > global > const).
+        const ratePerKm = result.ratePerKm ?? 0;
+        const drivingCost = result.isFree ? 0 : Math.round(ratePerKm * drivingKm);
+
+        setShippingCost(drivingCost);
         setFreeDelivery(result.isFree);
-        setDistanceKm(result.distanceKm);
+        setDistanceKm(drivingKm);
         setCenterName(result.centerName);
         setOutOfRange(false);
       } catch (e: any) {
@@ -291,7 +354,16 @@ export const CheckoutScreen: React.FC = () => {
         await paymentService.createOrder(cart.cartId!, 'PAY_AFTER_DELIVERY');
         await clear();
         await refresh();
-        navigation.replace('OrderSuccess', { orderId: cart.cartId });
+        // Invalidate the orders cache so OrdersScreen re-fetches and
+        // the newly-placed order appears immediately — was previously
+        // only visible after a manual refresh because React Query's
+        // staleTime kept the cached list around.
+        await queryClient.invalidateQueries({ queryKey: ['orders'] });
+        // Use `reset` (not `replace`) so the Cart-tab stack is
+        // [OrderSuccess] — not [CartMain, OrderSuccess]. When the
+        // user later taps the Cart tab they land on the empty cart,
+        // not the previous order's success screen.
+        navigation.reset({ index: 0, routes: [{ name: 'OrderSuccess', params: { orderId: cart.cartId } }] });
         showToast.success('Order placed!');
         return;
       }
@@ -324,7 +396,16 @@ export const CheckoutScreen: React.FC = () => {
         });
         await clear();
         await refresh();
-        navigation.replace('OrderSuccess', { orderId: cart.cartId });
+        // Invalidate the orders cache so OrdersScreen re-fetches and
+        // the newly-placed order appears immediately — was previously
+        // only visible after a manual refresh because React Query's
+        // staleTime kept the cached list around.
+        await queryClient.invalidateQueries({ queryKey: ['orders'] });
+        // Use `reset` (not `replace`) so the Cart-tab stack is
+        // [OrderSuccess] — not [CartMain, OrderSuccess]. When the
+        // user later taps the Cart tab they land on the empty cart,
+        // not the previous order's success screen.
+        navigation.reset({ index: 0, routes: [{ name: 'OrderSuccess', params: { orderId: cart.cartId } }] });
         showToast.success('Payment successful');
       } catch (err: any) {
         if (err?.code === 0 || err?.code === 'PAYMENT_CANCELLED') {
@@ -459,7 +540,13 @@ export const CheckoutScreen: React.FC = () => {
           {cart.items.map((it, i) => (
             <View key={`sm-${it.itemId ?? i}`} style={styles.summaryLine}>
               <Text variant="bodySmall" color={colors.textPrimary} numberOfLines={1} style={{ flex: 1 }}>
-                {(it.name || it.product?.name) ?? 'Item'} × {it.qty}
+                {(it.name || it.product?.name) ?? 'Item'}
+                {/* Show variant label (e.g. "500g", "1kg", "250ml") so
+                    Order Summary matches what the Cart screen shows.
+                    Same field the cart line uses — was previously
+                    omitted from this row. */}
+                {it.qtyOptionLabel ? ` (${it.qtyOptionLabel})` : ''}
+                {' × '}{it.qty}
               </Text>
               <Text variant="bodySmall" color={colors.textPrimary}>
                 {formatINR(it.price * it.qty)}
@@ -468,22 +555,22 @@ export const CheckoutScreen: React.FC = () => {
           ))}
           <Divider spacing_={spacing.sm} />
           <SummaryRow label="Subtotal" value={formatINR(subtotal)} />
+          {/* Clean shipping row — Zepto / Swiggy / Zomato pattern.
+              We DELIBERATELY don't expose distance, warehouse name, or
+              per-km math to the customer. Internally we still compute
+              all of that (driving distance via Distance Matrix → cost
+              via per-km rate), but the customer just sees a plain
+              "Delivery: FREE" or "Delivery: ₹40" line — same shape as
+              every consumer e-commerce app. Distance / warehouse are
+              implementation details, not user-facing UI. */}
           <SummaryRow
-            label="Shipping"
+            label="Delivery"
             value={
               effectiveShipping === 0
                 ? freeDelivery || subtotal >= (shippingConfig?.freeAboveCartAmount ?? SHIPPING_CONFIG.freeAboveCartAmount)
                   ? 'FREE'
                   : formatINR(0)
                 : formatINR(effectiveShipping)
-            }
-            // When the backend returned distance info, show the
-            // "12.4 km · HITEC City Warehouse" subtitle so the user
-            // sees WHY their shipping cost is what it is.
-            subtitle={
-              typeof distanceKm === 'number' && centerName
-                ? `${formatKm(distanceKm)} from ${centerName}`
-                : undefined
             }
           />
           <Divider spacing_={spacing.sm} />

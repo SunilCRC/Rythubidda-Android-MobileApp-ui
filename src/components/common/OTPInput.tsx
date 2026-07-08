@@ -152,7 +152,10 @@ export const OTPInput = forwardRef<OTPInputHandle, Props>(
                     ? colors.primary
                     : colors.border,
                   backgroundColor: filled ? colors.tintSoft : colors.surface,
-                  color: colors.textPrimary,
+                  // See Input.tsx — pure black + includeFontPadding off
+                  // so OTP digits never look pale on Android.
+                  color: '#000000',
+                  includeFontPadding: false,
                 },
               ]}
               textContentType="oneTimeCode"

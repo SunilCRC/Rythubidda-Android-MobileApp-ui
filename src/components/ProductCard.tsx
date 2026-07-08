@@ -214,7 +214,13 @@ export const ProductCard: React.FC<Props> = ({
           <Text
             variant="bodyBold"
             color={colors.textPrimary}
-            numberOfLines={2}
+            // Constrain to ONE line + ellipsis (industry pattern —
+            // Zepto/Blinkit/BigBasket all single-line product names).
+            // Two-line wrapping made cards visually uneven and
+            // pushed the price block down inconsistently across the
+            // grid. Single line + a fixed `name.minHeight` keeps
+            // every card aligned regardless of name length.
+            numberOfLines={1}
             ellipsizeMode="tail"
             weight="700"
             style={styles.name}
@@ -238,7 +244,10 @@ export const ProductCard: React.FC<Props> = ({
             </View>
           ) : null}
 
-          {/* Variant dropdown — sits immediately under the name with a tight gap */}
+          {/* Variant dropdown — sits immediately under the name with a tight gap.
+              Text is FULLY black + bold so it reads at a glance, and the
+              border + bg are tinted with brand cream so the dropdown
+              feels like an active control, not faded grey chrome. */}
           {!compact && options.length > 1 ? (
             <Pressable
               onPress={e => {
@@ -250,8 +259,8 @@ export const ProductCard: React.FC<Props> = ({
             >
               <Text
                 variant="bodySmall"
-                color={colors.textPrimary}
-                weight="600"
+                color={colors.black}
+                weight="700"
                 numberOfLines={1}
                 style={{ flex: 1 }}
               >
@@ -273,8 +282,8 @@ export const ProductCard: React.FC<Props> = ({
             {hasDiscount ? (
               <Text
                 variant="bodySmall"
-                color={colors.textTertiary}
-                weight="600"
+                color={colors.textSecondary}
+                weight="700"
                 style={styles.mrp}
               >
                 {formatINR(displayMrp!)}
@@ -408,18 +417,29 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   // Body fills remaining space so bottomBlock always pins to the bottom.
+  // Extra top padding gives the image-to-name handoff more breathing
+  // room; bottomBlock keeps the price row hugging the Add button.
   body: {
     flex: 1,
-    padding: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md + 2,
+    paddingBottom: spacing.md,
     justifyContent: 'space-between',
   },
   topBlock: {},
-  bottomBlock: {},
-  // Reserve 2 lines of vertical space whether the name is short or long.
-  // This is what keeps the price row + Add button aligned across cards.
+  // Bottom block gets explicit top spacing so the price row never
+  // touches the variant dropdown / rating row above it. The old
+  // layout relied on flex space-between alone, which collapsed when
+  // the card content was short.
+  bottomBlock: {
+    marginTop: spacing.sm,
+  },
+  // Single-line name — fixed height matches one line of bodyBold so
+  // the price row + Add button always sit at the same Y across every
+  // card in the grid.
   name: {
-    minHeight: 40,
-    marginBottom: 4,
+    minHeight: 22,
+    marginBottom: 6,
   },
   ratingRow: {
     flexDirection: 'row',
@@ -429,17 +449,23 @@ const styles = StyleSheet.create({
   variantRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
+    // Brand-tinted border + cream fill instead of pale grey — reads
+    // immediately as an interactive control.
+    borderWidth: 1.5,
+    borderColor: colors.primary,
     borderRadius: radius.base,
     paddingHorizontal: spacing.sm,
     paddingVertical: 7,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.tintSoft,
   },
   priceRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
     flexWrap: 'wrap',
+    // Extra space between the image+variant block and the price line
+    // — was previously zero, which made the price feel jammed up
+    // against the dropdown / rating row on dense cards.
+    marginTop: spacing.xs,
   },
   mrp: {
     marginLeft: spacing.sm,

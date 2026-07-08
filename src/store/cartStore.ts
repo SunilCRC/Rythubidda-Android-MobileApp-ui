@@ -32,6 +32,36 @@ async function persist(cart: ShoppingCart | null) {
   }
 }
 
+/**
+ * Map the backend's `ShoppingItem` DTO field names to the UI's
+ * expected shape.
+ *
+ * Specifically: the backend exposes the variant string as `qtyOption`
+ * (see ShoppingItem.java line 18) — e.g. "100gms", "1kg", "250ml".
+ * Every screen in the app reads `qtyOptionLabel`. Without aliasing the
+ * field here, the variant silently disappears between cart add and
+ * cart render — that's the "cart doesn't show 100gms" bug testers
+ * reported.
+ *
+ * Applies to every code path that brings a cart into the store
+ * (addItem, refresh, hydrate) so the UI's existing reads work
+ * unchanged.
+ */
+function normalizeCart(cart: ShoppingCart | null): ShoppingCart | null {
+  if (!cart) return cart;
+  const items = Array.isArray(cart.items)
+    ? cart.items.map(it => {
+        if (!it) return it;
+        const raw = it as ShoppingItem & { qtyOption?: string };
+        return {
+          ...raw,
+          qtyOptionLabel: raw.qtyOptionLabel ?? raw.qtyOption ?? undefined,
+        } as ShoppingItem;
+      })
+    : cart.items;
+  return { ...cart, items } as ShoppingCart;
+}
+
 export const useCartStore = create<CartState>((set, get) => ({
   cart: null,
   loading: false,
@@ -41,7 +71,7 @@ export const useCartStore = create<CartState>((set, get) => ({
     try {
       const raw = await AsyncStorage.getItem(STORAGE_KEYS.GUEST_CART);
       if (raw) {
-        const cart = JSON.parse(raw) as ShoppingCart;
+        const cart = normalizeCart(JSON.parse(raw) as ShoppingCart);
         set({ cart });
       }
     } catch {
@@ -54,7 +84,7 @@ export const useCartStore = create<CartState>((set, get) => ({
   refresh: async () => {
     set({ loading: true });
     try {
-      const cart = await cartService.getCart();
+      const cart = normalizeCart(await cartService.getCart());
       set({ cart, loading: false });
       persist(cart);
     } catch {
@@ -63,7 +93,7 @@ export const useCartStore = create<CartState>((set, get) => ({
   },
 
   addItem: async item => {
-    const cart = await cartService.addItem(item);
+    const cart = normalizeCart(await cartService.addItem(item));
     set({ cart });
     persist(cart);
   },
@@ -74,8 +104,53 @@ export const useCartStore = create<CartState>((set, get) => ({
   },
 
   removeItem: async itemId => {
-    await cartService.removeItem(itemId);
-    await get().refresh();
+    // Optimistic remove — testers reported that tapping delete felt
+    // like a 5–10 min freeze on slow networks. The old flow was
+    // `await delete` THEN `await refresh`: two sequential network
+    // round-trips before the UI updated, so the item visibly sat
+    // there until both returned. Now we drop the item from local
+    // state IMMEDIATELY, persist the snapshot, then sync with the
+    // backend in the background. On API failure we revert and surface
+    // an error so the caller can toast.
+    const prev = get().cart;
+    if (prev && Array.isArray(prev.items)) {
+      const targetId = String(itemId);
+      const remaining = prev.items.filter(i => {
+        const ids = [
+          (i as any).itemId,
+          (i as any).cartItemId,
+          (i as any).id,
+        ].map(v => (v == null ? '' : String(v)));
+        return !ids.includes(targetId);
+      });
+      // Recompute subtotal so the bottom bar / checkout row reacts
+      // instantly without a refresh round-trip.
+      const newSubtotal = remaining.reduce(
+        (s, i) => s + (i.price || 0) * (i.qty || 0),
+        0,
+      );
+      const optimistic = {
+        ...prev,
+        items: remaining,
+        subtotal: newSubtotal,
+      } as ShoppingCart;
+      set({ cart: optimistic });
+      persist(optimistic);
+    }
+    try {
+      await cartService.removeItem(itemId);
+      // Quietly reconcile with server in the background. We don't
+      // await visibility — UI is already updated. If the refresh
+      // brings back the item (rare), the user sees it re-appear,
+      // which is correct.
+      get().refresh();
+    } catch (e) {
+      // Revert on failure so the cart returns to its real state and
+      // the caller's catch block can toast.
+      set({ cart: prev });
+      persist(prev);
+      throw e;
+    }
   },
 
   clear: async () => {

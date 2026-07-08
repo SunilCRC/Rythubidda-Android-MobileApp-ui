@@ -173,7 +173,10 @@ export const MainTabs: React.FC = () => (
       tabBarActiveTintColor: colors.primary,        // #AB6639 — brand
       tabBarInactiveTintColor: colors.textSecondary, // darker than before — readable
       tabBarStyle: {
-        backgroundColor: colors.surface,
+        // Match the body background so the bottom bar reads as a
+        // continuous extension of the screen, not a separate white
+        // strip stuck to the bottom.
+        backgroundColor: colors.background,
         borderTopColor: colors.divider,
         height: 64,
         paddingBottom: 8,

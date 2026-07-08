@@ -7,7 +7,6 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
-import Icon from 'react-native-vector-icons/Feather';
 import FastImage from 'react-native-fast-image';
 import { useNavigation } from '@react-navigation/native';
 import { useQuery } from '@tanstack/react-query';
@@ -18,6 +17,7 @@ import { colors } from '../../theme/colors';
 import { radius, shadows, spacing } from '../../theme/spacing';
 import { toArray } from '../../utils/format';
 import { isValidImageUrl, resolveImageUrl } from '../../utils/image';
+import { iconForCategory, titleCaseCategory } from '../../utils/categoryIcon';
 import type { Category } from '../../types';
 
 const { width: SCREEN_W } = Dimensions.get('window');
@@ -25,18 +25,11 @@ const GRID_GAP = spacing.base;
 const H_PADDING = spacing.base;
 const CARD_W = (SCREEN_W - H_PADDING * 2 - GRID_GAP) / 2;
 
-// A small set of icons we cycle through so every category gets a
-// distinct, confident visual hint even when the backend has no image.
-const ICON_CYCLE = [
-  'shopping-bag',
-  'coffee',
-  'box',
-  'gift',
-  'droplet',
-  'award',
-  'feather',
-  'sun',
-];
+// Generic Feather cycle (shopping-bag, coffee, box, gift, droplet…)
+// was removed — it produced confidently WRONG icons (a coffee cup
+// for Cashew, a droplet for Chilli powder). The new util in
+// `utils/categoryIcon.ts` picks an emoji whose meaning actually
+// matches the category name. Falls back to 🛒 when nothing matches.
 
 /**
  * Bold, visually-rich category grid.
@@ -124,8 +117,11 @@ const CategoryTile: React.FC<TileProps> = ({ category, index, onPress }) => {
   };
 
   const tint = colors.categoryTints[index % colors.categoryTints.length];
-  const iconName = ICON_CYCLE[index % ICON_CYCLE.length];
+  const emoji = iconForCategory(category.name);
   const hasImage = isValidImageUrl(category.image);
+  // Normalise display casing so "palm oil" / "Brown Rice" / "kismiss"
+  // all render in clean Title Case. Doesn't touch the underlying row.
+  const displayName = titleCaseCategory(category.name);
   const subCount =
     category.children?.length ?? category.subcategories?.length ?? 0;
 
@@ -148,7 +144,7 @@ const CategoryTile: React.FC<TileProps> = ({ category, index, onPress }) => {
             />
           ) : (
             <View style={styles.iconWrap}>
-              <Icon name={iconName} size={36} color={colors.primary} />
+              <Text style={styles.emoji}>{emoji}</Text>
             </View>
           )}
         </View>
@@ -162,7 +158,7 @@ const CategoryTile: React.FC<TileProps> = ({ category, index, onPress }) => {
             ellipsizeMode="tail"
             style={styles.labelText}
           >
-            {category.name}
+            {displayName}
           </Text>
           {subCount > 0 ? (
             <Text
@@ -214,6 +210,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     ...shadows.sm,
+  },
+  // Emoji size tuned to read at-a-glance inside the 64px icon well.
+  // includeFontPadding off so Android doesn't add asymmetric padding
+  // and shift the emoji off-center.
+  emoji: {
+    fontSize: 32,
+    lineHeight: 38,
+    includeFontPadding: false,
+    textAlign: 'center',
   },
   label: {
     paddingHorizontal: spacing.sm,

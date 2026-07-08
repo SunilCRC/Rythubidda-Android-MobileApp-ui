@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { Animated, Easing, StatusBar, StyleSheet, View } from 'react-native';
+import { Animated, Easing, InteractionManager, StatusBar, StyleSheet, View } from 'react-native';
 import FastImage from 'react-native-fast-image';
 import LinearGradient from 'react-native-linear-gradient';
 import Icon from 'react-native-vector-icons/Feather';
@@ -152,7 +152,17 @@ export const SplashScreen: React.FC = () => {
     dot3,
   ]);
 
+  // Idempotency guard. The effect re-runs every time `status` flips
+  // (`idle → loading → authenticated`), which used to spawn a NEW
+  // Promise chain each time — meaning navigation.reset() could fire
+  // multiple times if the chains all happened to resolve. Second call
+  // hits a half-disposed screen container and crashes:
+  //   "No view found for id 0x… for fragment ScreenFragment"
+  // Ref guarantees reset fires AT MOST ONCE per app launch.
+  const hasNavigatedRef = useRef(false);
+
   useEffect(() => {
+    if (hasNavigatedRef.current) return;
     // Advance once the minimum splash duration has elapsed AND auth has resolved
     const minWait = new Promise<void>(res =>
       setTimeout(() => res(), SPLASH_DURATION_MS),
@@ -171,7 +181,27 @@ export const SplashScreen: React.FC = () => {
     });
 
     Promise.all([minWait, authSettled]).then(() => {
-      navigation.reset({ index: 0, routes: [{ name: 'Main' }] });
+      if (hasNavigatedRef.current) return;
+      hasNavigatedRef.current = true;
+      // CRITICAL: defer the navigation.reset until every pending UI
+      // animation + transition has completed.
+      //
+      // Without this, react-native-screens commits a fragment txn
+      // against the splash's about-to-be-destroyed screen-container
+      // view ID — that's the exact stack trace the user sees:
+      //   ScreenContainer.kt:376 performUpdates
+      //   ScreenStack.kt:303 onUpdate
+      //   ... commitNowAllowingStateLoss
+      //   ... createView → "No view found for id 0x…"
+      //
+      // The crash is intermittent because frame ordering decides
+      // whether the splash container is fully torn down BEFORE the
+      // MainTabs container is created. InteractionManager guarantees
+      // we wait until after all animations finish — that ordering is
+      // then deterministic.
+      InteractionManager.runAfterInteractions(() => {
+        navigation.reset({ index: 0, routes: [{ name: 'Main' }] });
+      });
     });
   }, [navigation, status]);
 
@@ -259,7 +289,7 @@ export const SplashScreen: React.FC = () => {
                 wordmark) — same asset used on the home header so the
                 splash → home transition feels visually continuous. */}
             <FastImage
-              source={require('../../assets/images/logo.gif')}
+              source={require('../../assets/images/brand-logo.gif')}
               style={styles.cow}
               resizeMode={FastImage.resizeMode.contain}
             />

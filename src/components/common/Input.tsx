@@ -83,7 +83,12 @@ export const Input = forwardRef<TextInput, Props>(
           <TextInput
             ref={ref}
             style={[styles.input, style as TextStyle]}
-            placeholderTextColor={colors.textTertiary}
+            // Clearly muted grey — placeholderTextColor used to be
+            // textTertiary (#3E3D37, near-black) which read as
+            // already-typed text. neutral[400] sits well below the
+            // body legibility floor so the hint can never be confused
+            // with user input.
+            placeholderTextColor={colors.palette.neutral[400]}
             selectionColor={colors.primary}
             cursorColor={colors.primary}
             secureTextEntry={isPassword && !pwdVisible}
@@ -154,8 +159,19 @@ const styles = StyleSheet.create({
     flex: 1,
     fontFamily: fonts.regular,
     fontSize: fontSizes.base,
-    fontWeight: '600',
-    color: colors.textPrimary,
+    // Bumped from 600 → 700. Only Montserrat-Regular.ttf is bundled
+    // (no Semibold/Bold variants), so Android renders weight 600 as
+    // synthetic faux-bold which looks weak/pale on many devices.
+    // Pushing to 700 makes the synthetic weight noticeably heavier.
+    fontWeight: '700',
+    // Pure black instead of palette.neutral[800] (#161612) — testers
+    // reported the typed text looked pale; maxing contrast removes
+    // any device-specific tinting (Samsung OneUI, MIUI etc. shift the
+    // near-black to a soft grey on some skins).
+    color: '#000000',
+    // Android adds a few px of "font padding" around glyphs that
+    // visually thins the stroke. Killing it makes the text read crisper.
+    includeFontPadding: false,
     paddingVertical: spacing.sm,
   },
   leftIcon: { marginRight: spacing.sm },

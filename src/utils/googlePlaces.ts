@@ -108,12 +108,41 @@ interface NewAutocompleteResponse {
   error?: { code: number; message: string; status: string };
 }
 
+export interface AutocompleteBias {
+  /** Center the bias circle on this point. */
+  latitude: number;
+  longitude: number;
+  /**
+   * Bias radius in meters. Defaults to 15 km — tight enough that
+   * suggestions near the bias point rank first, but loose enough to
+   * still surface valid addresses across one city's metro area.
+   */
+  radiusMeters?: number;
+}
+
 /**
  * Autocomplete via Places API (New). India-biased via `regionCode: "in"`.
+ *
+ * @param bias  Optional bias center. Pass the user's current GPS coords
+ *              (or last-known pin position) so suggestions near them
+ *              rank first. This is the industry-standard pattern
+ *              (Zepto / Swiggy / Uber) that fixes the "Miyapur"
+ *              ambiguity: when the user is physically in Hyderabad,
+ *              Hyderabad's Miyapur (pincode 500049) ranks above the
+ *              identically-named Miyapur on the Sangareddy district
+ *              border (pincode 502033). Without it, Google picks the
+ *              suggestion order from its global ranking signals — which
+ *              for ambiguous Hyderabad fringe names ends up surfacing
+ *              the smaller / less-busy place because it's deemed
+ *              "more relevant" to the search term.
+ *
+ *              When omitted, falls back to a tight Hyderabad-metro
+ *              rectangle bias (still better than no bias at all).
  */
 export async function autocomplete(
   input: string,
   sessionToken: string,
+  bias?: AutocompleteBias,
 ): Promise<AutocompleteResult> {
   const apiKey = getApiKey();
   if (!apiKey) {
@@ -147,6 +176,44 @@ export async function autocomplete(
         sessionToken,
         regionCode: 'in',
         languageCode: 'en',
+        // Restrict result country to India explicitly — was previously
+        // only suggested via regionCode, which is a softer bias.
+        includedRegionCodes: ['in'],
+        // NO `includedPrimaryTypes` filter — customers need to search
+        // for apartments (premise/subpremise), malls (shopping_mall),
+        // metro stations (transit_station), hospitals, and other POIs
+        // as part of their delivery address. An earlier attempt to
+        // restrict types to locality/sublocality/neighborhood/
+        // street_address broke ALL of those searches, which was
+        // strictly worse than the Miyapur-boundary ambiguity it was
+        // trying to fix.
+        // Location bias — circle around the user's current position
+        // when we have it (industry-standard for delivery apps), else
+        // a tight Hyderabad-metro rectangle. The previous rectangle
+        // was 17.0–17.8 lat × 78.0–79.0 lng, which is roughly 90 km
+        // square — way too loose. Inside that rectangle the
+        // ambiguous-name fringe places (Miyapur in Sangareddy, etc.)
+        // outrank the Hyderabad-city same-name places because
+        // Google's relevance signal weights other features more than
+        // distance when the bias is this wide.
+        locationBias: bias
+          ? {
+              circle: {
+                center: { latitude: bias.latitude, longitude: bias.longitude },
+                radius: bias.radiusMeters ?? 15000,
+              },
+            }
+          : {
+              rectangle: {
+                // Tightened to Hyderabad metro proper (~35 km square).
+                // Still wide enough to cover the entire delivery zone
+                // around Vivekananda Nagar Colony warehouse, narrow
+                // enough that city-side suggestions outrank fringe
+                // boundary-village suggestions.
+                low: { latitude: 17.30, longitude: 78.25 },
+                high: { latitude: 17.60, longitude: 78.60 },
+              },
+            },
       }),
     });
   } catch (e: any) {
