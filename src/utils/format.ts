@@ -3,12 +3,16 @@
  */
 
 /**
- * Distance in km — 1 decimal under 10km, 0 decimals above.
+ * Distance in km — always 1 decimal ("16.8 km"). Tester feedback said
+ * rounding hid meaningful differences ("16 km" and "16.9 km" both
+ * printed as "16 km", and mobile ↔ web comparisons became noisier
+ * than they needed to be). One decimal is enough precision to match
+ * Google Maps' own display and to make cross-app comparisons clean.
  * Returns empty string for null/undefined so it's safe to interpolate.
  */
 export function formatKm(km: number | undefined | null): string {
   if (km == null || isNaN(km)) return '';
-  return km < 10 ? `${km.toFixed(1)} km` : `${Math.round(km)} km`;
+  return `${km.toFixed(1)} km`;
 }
 
 export function formatINR(amount: number | undefined | null): string {

@@ -555,14 +555,15 @@ export const CheckoutScreen: React.FC = () => {
           ))}
           <Divider spacing_={spacing.sm} />
           <SummaryRow label="Subtotal" value={formatINR(subtotal)} />
-          {/* Clean shipping row — Zepto / Swiggy / Zomato pattern.
-              We DELIBERATELY don't expose distance, warehouse name, or
-              per-km math to the customer. Internally we still compute
-              all of that (driving distance via Distance Matrix → cost
-              via per-km rate), but the customer just sees a plain
-              "Delivery: FREE" or "Delivery: ₹40" line — same shape as
-              every consumer e-commerce app. Distance / warehouse are
-              implementation details, not user-facing UI. */}
+          {/* Delivery row — clean Zepto / Swiggy / Blinkit pattern.
+              We DELIBERATELY don't expose distance or warehouse name
+              to the customer. The driving km used for the fee is
+              computed internally via Distance Matrix — customer just
+              sees the final ₹. Showing km triggers customers to
+              cross-check against Google Maps (friction) and locks us
+              into per-km pricing on the UI even if we ever move to
+              tier pricing (₹30 / ₹50 / ₹70 buckets). Consumer apps
+              all hide it — we do the same. */}
           <SummaryRow
             label="Delivery"
             value={
