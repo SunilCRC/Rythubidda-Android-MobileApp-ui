@@ -5,3 +5,4 @@ export { addressService } from './addressService';
 export { orderService } from './orderService';
 export { paymentService } from './paymentService';
 export { shippingService } from './shippingService';
+export { homeContentService } from './homeContentService';

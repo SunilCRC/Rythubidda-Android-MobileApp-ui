@@ -199,6 +199,54 @@ export const ProductCard: React.FC<Props> = ({
             </Text>
           </View>
         ) : null}
+
+        {/* ADD on the image's bottom-right corner — the Zepto/Blinkit
+            pattern. The button lives on the image, so the price line
+            below owns the full card width and can never squeeze it,
+            however many digits the price has. Morphs into a compact
+            stepper once the line is in the cart. */}
+        {showAddToCart ? (
+          <View style={styles.addSlot}>
+            {cartQty > 0 ? (
+              <Animated.View entering={FadeIn.duration(180)} exiting={FadeOut.duration(120)}>
+                <QuantityStepper
+                  qty={cartQty}
+                  onIncrement={handleIncrement}
+                  onDecrement={handleDecrement}
+                  loading={busy}
+                  min={0}
+                  max={APP_CONFIG.MAX_CART_ITEM_QTY}
+                  size="sm"
+                  tone="primary"
+                />
+              </Animated.View>
+            ) : (
+              <Animated.View entering={FadeIn.duration(180)} exiting={FadeOut.duration(120)}>
+                <Pressable
+                  onPress={handleAdd}
+                  disabled={busy || outOfStock}
+                  android_ripple={{ color: colors.pressed }}
+                  style={({ pressed }) => [
+                    styles.addPill,
+                    outOfStock && styles.addPillDisabled,
+                    pressed && !outOfStock && { transform: [{ scale: 0.96 }] },
+                  ]}
+                >
+                  <Text
+                    variant="caption"
+                    color={outOfStock ? colors.textTertiary : colors.primary}
+                    weight="800"
+                    numberOfLines={1}
+                    style={{ letterSpacing: 0.8 }}
+                  >
+                    ADD
+                  </Text>
+                </Pressable>
+              </Animated.View>
+            )}
+          </View>
+        ) : null}
+
         {outOfStock ? (
           <View style={styles.oosOverlay}>
             <Text variant="bodyBold" color={colors.white}>
@@ -227,6 +275,15 @@ export const ProductCard: React.FC<Props> = ({
           >
             {product.name}
           </Text>
+
+          {/* v3 tile: pack size / unit on its own quiet line under
+              the name (mockup "1 kg" line) — moved out of the price
+              row so the price + ADD row stays clean. */}
+          {unit ? (
+            <Text variant="caption" color={colors.textTertiary} weight="700" numberOfLines={1} style={styles.unitLine}>
+              {unit}
+            </Text>
+          ) : null}
 
           {rating > 0 && !compact ? (
             <View style={styles.ratingRow}>
@@ -273,81 +330,24 @@ export const ProductCard: React.FC<Props> = ({
           ) : null}
         </View>
 
-        <View style={styles.bottomBlock}>
-          {/* Price row */}
-          <View style={styles.priceRow}>
-            <Text variant="h5" color={colors.textPrimary} weight="800">
+        {/* Price line — full width, never competes with the button
+            (that lives on the image corner). */}
+        <View style={styles.bottomRow}>
+          <View style={styles.priceCol}>
+            <Text variant="body" color={colors.textPrimary} weight="800">
               {formatINR(displayPrice)}
             </Text>
             {hasDiscount ? (
               <Text
-                variant="bodySmall"
-                color={colors.textSecondary}
+                variant="caption"
+                color={colors.textTertiary}
                 weight="700"
                 style={styles.mrp}
               >
                 {formatINR(displayMrp!)}
               </Text>
             ) : null}
-            {unit ? (
-              <Text
-                variant="caption"
-                color={colors.textSecondary}
-                weight="700"
-                style={{ marginLeft: 6 }}
-              >
-                {unit}
-              </Text>
-            ) : null}
           </View>
-
-          {/* Add button ↔ Quantity stepper */}
-          {showAddToCart ? (
-            cartQty > 0 ? (
-              <Animated.View
-                entering={FadeIn.duration(180)}
-                exiting={FadeOut.duration(120)}
-                style={{ marginTop: spacing.sm }}
-              >
-                <QuantityStepper
-                  qty={cartQty}
-                  onIncrement={handleIncrement}
-                  onDecrement={handleDecrement}
-                  loading={busy}
-                  min={0}
-                  max={APP_CONFIG.MAX_CART_ITEM_QTY}
-                  size="md"
-                  tone="primary"
-                />
-              </Animated.View>
-            ) : (
-              <Animated.View
-                entering={FadeIn.duration(180)}
-                exiting={FadeOut.duration(120)}
-              >
-                <Pressable
-                  onPress={handleAdd}
-                  disabled={busy || outOfStock}
-                  android_ripple={{ color: 'rgba(255,255,255,0.2)' }}
-                  style={({ pressed }) => [
-                    styles.addBtn,
-                    outOfStock && styles.addBtnDisabled,
-                    pressed && !outOfStock && { transform: [{ scale: 0.98 }] },
-                  ]}
-                >
-                  <Icon name="shopping-cart" size={14} color={colors.white} />
-                  <Text
-                    variant="button"
-                    color={colors.white}
-                    weight="700"
-                    style={{ marginLeft: 6, letterSpacing: 0.3 }}
-                  >
-                    Add
-                  </Text>
-                </Pressable>
-              </Animated.View>
-            )
-          ) : null}
         </View>
       </View>
 
@@ -372,12 +372,15 @@ export const ProductCard: React.FC<Props> = ({
 const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.surface,
-    borderRadius: radius.xl,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
     overflow: 'hidden',
     // Fixed min-height keeps every card in a grid aligned regardless
-    // of name length / number of variant rows.
-    minHeight: 340,
-    ...shadows.md,
+    // of name length / number of variant rows. v3 tile is denser
+    // than the old 340 card.
+    minHeight: 240,
+    ...shadows.sm,
   },
   imageWrap: {
     width: '100%',
@@ -396,15 +399,15 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     borderRadius: radius.full,
   },
+  // v3 tile: teal discount pill (board's "21% OFF" treatment).
   discountPill: {
     position: 'absolute',
     top: spacing.sm,
     right: spacing.sm,
-    backgroundColor: colors.badgeDiscount,
+    backgroundColor: '#2A9D8F',
     paddingHorizontal: spacing.sm,
-    paddingVertical: 3,
+    paddingVertical: 2.5,
     borderRadius: radius.full,
-    ...shadows.sm,
   },
   oosOverlay: {
     position: 'absolute',
@@ -439,7 +442,10 @@ const styles = StyleSheet.create({
   // card in the grid.
   name: {
     minHeight: 22,
-    marginBottom: 6,
+    marginBottom: 1,
+  },
+  unitLine: {
+    marginBottom: 4,
   },
   ratingRow: {
     flexDirection: 'row',
@@ -449,39 +455,51 @@ const styles = StyleSheet.create({
   variantRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    // Brand-tinted border + cream fill instead of pale grey — reads
-    // immediately as an interactive control.
-    borderWidth: 1.5,
-    borderColor: colors.primary,
+    // v3: quieter control — hairline border, surface fill; the tap
+    // still opens the variant sheet.
+    borderWidth: 1,
+    borderColor: colors.border,
     borderRadius: radius.base,
     paddingHorizontal: spacing.sm,
-    paddingVertical: 7,
-    backgroundColor: colors.tintSoft,
+    paddingVertical: 5,
+    backgroundColor: colors.surface,
   },
-  priceRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    flexWrap: 'wrap',
-    // Extra space between the image+variant block and the price line
-    // — was previously zero, which made the price feel jammed up
-    // against the dropdown / rating row on dense cards.
-    marginTop: spacing.xs,
-  },
-  mrp: {
-    marginLeft: spacing.sm,
-    textDecorationLine: 'line-through',
-  },
-  addBtn: {
+  // v3 tile bottom row: price left, ADD pill / stepper right.
+  bottomRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.primary,
-    paddingVertical: spacing.sm + 2,
-    borderRadius: radius.lg,
+    justifyContent: 'space-between',
+    gap: spacing.sm,
     marginTop: spacing.sm,
+  },
+  priceCol: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    flexShrink: 1,
+    gap: 6,
+  },
+  mrp: {
+    textDecorationLine: 'line-through',
+  },
+  // Bottom-right corner of the IMAGE (Zepto/Blinkit placement).
+  addSlot: {
+    position: 'absolute',
+    right: 8,
+    bottom: 8,
+  },
+  addPill: {
+    borderWidth: 1.4,
+    borderColor: colors.primary,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    minWidth: 60,
+    alignItems: 'center',
     ...shadows.sm,
   },
-  addBtnDisabled: {
-    backgroundColor: colors.disabled,
+  addPillDisabled: {
+    borderColor: colors.border,
+    backgroundColor: colors.tintSoft,
   },
 });

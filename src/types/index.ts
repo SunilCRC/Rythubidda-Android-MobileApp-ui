@@ -373,9 +373,61 @@ export interface GalleryImage {
   image?: string;
   url?: string;
   title?: string;
+  /** Admin-entered overlay copy (gallery row heading/description). */
+  heading?: string;
+  description?: string;
   orientation?: string;
   position?: number;
   linkTo?: string;
+}
+
+/** One selectable pack of the live Today's Deal (admin free text + price). */
+export interface TodaysDealVariant {
+  id: number;
+  label: string;
+  price: number;
+}
+
+/**
+ * The currently-live Today's Deal. Backend enforces pricing, the
+ * per-customer max quantity and one-order-per-customer; when the
+ * signed-in customer already used the offer the endpoint returns
+ * deal: null so the card hides just for them.
+ */
+export interface TodaysDeal {
+  id: number;
+  productId: number;
+  productName: string;
+  productImage: string;
+  qtyOptionId: number | null;
+  dealPrice: number;
+  variantLabel?: string;
+  variants: TodaysDealVariant[];
+  maxQtyPerCustomer: number;
+  remainingSeconds: number;
+}
+
+/** "Meet Today's Farmer" card data (admin-managed). */
+export interface TodaysFarmer {
+  id: number;
+  name: string;
+  location?: string;
+  cropSpecialty?: string;
+  storyShort?: string;
+  /** Full story — present on the /farmers/{id} detail endpoint. */
+  storyFull?: string;
+  yearsFarming?: number;
+  harvestedDaysAgo?: number;
+}
+
+/** Admin-approved product review for the home testimonials carousel. */
+export interface ApprovedReview {
+  id: number;
+  customerName: string;
+  productName: string;
+  rating: number;
+  title: string;
+  review: string;
 }
 
 export interface Banner {

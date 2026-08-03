@@ -14,28 +14,33 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Feather';
-import LinearGradient from 'react-native-linear-gradient';
 import FastImage from 'react-native-fast-image';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigation } from '@react-navigation/native';
-import { catalogService } from '../../api/services';
+import { catalogService, homeContentService } from '../../api/services';
 import { Skeleton, Text } from '../../components/common';
 import { Container } from '../../components/layout/Container';
-import { DeliverToPill } from '../../components/DeliverToPill';
 import { HeroCarousel } from '../../components/HeroCarousel';
+import { PromiseHeader } from '../../components/home/PromiseHeader';
+import { SavingsStrip } from '../../components/home/SavingsStrip';
+import { DealSpotlight } from '../../components/home/DealSpotlight';
+import { FarmerStoryBanner } from '../../components/home/FarmerStoryBanner';
+import { FloatingCartPill } from '../../components/home/FloatingCartPill';
+import { ProductQuickSheet } from '../../components/ProductQuickSheet';
+import { ReviewsCarousel } from '../../components/home/ReviewsCarousel';
 import { ProductCard } from '../../components/ProductCard';
 import { WelcomePromoModal } from '../../components/feedback/WelcomePromoModal';
 import { colors } from '../../theme/colors';
 import { radius, shadows, spacing } from '../../theme/spacing';
-import { useUIStore } from '../../store';
+import { useCartStore, useIsAuthenticated, useLocationStore } from '../../store';
 import { toArray } from '../../utils/format';
 import { hasProductImage } from '../../utils/image';
 import { iconForCategory, titleCaseCategory } from '../../utils/categoryIcon';
-import type { Category, GalleryImage, Product } from '../../types';
+import type { Category, GalleryImage, Product, TodaysDeal } from '../../types';
 
 // Show ~2 cards per screen width — slight peek of the third to hint "scroll me".
 const SCREEN_W = Dimensions.get('window').width;
-const PRODUCT_CARD_WIDTH = Math.floor((SCREEN_W - 16 * 2 - 12) / 2);
+// (grid tiles size themselves via styles.gridItem 48.5%)
 
 // Responsive brand-image width — bounded so it doesn't dominate small
 // phones (320dp) or look tiny on tablets. The header reserves ~120dp
@@ -83,67 +88,6 @@ export const HomeScreen: React.FC = () => {
   const openProfile = () =>
     navigation.getParent()?.navigate('ProfileTab');
 
-  // ── Categories side-drawer state ─────────────────────────────────────
-  // `mounted` controls whether the Modal is in the tree at all (so we
-  // can run an exit animation before unmount); drawerX/backdropOpacity
-  // drive the slide + fade transitions. useNativeDriver throughout so
-  // the animation runs off the JS thread.
-  //
-  // The OPEN signal is driven by the global UI store — that way the
-  // bottom-tab "Shop" button can trigger the drawer too, without us
-  // needing to lift the animation logic out of this screen.
-  const [drawerMounted, setDrawerMounted] = useState(false);
-  const drawerX = useRef(new Animated.Value(-DRAWER_W)).current;
-  const backdropOpacity = useRef(new Animated.Value(0)).current;
-  const globalDrawerOpen = useUIStore(s => s.categoriesDrawerOpen);
-  const closeGlobalDrawer = useUIStore(s => s.closeCategoriesDrawer);
-  const openGlobalDrawer = useUIStore(s => s.openCategoriesDrawer);
-
-  const runOpenAnim = useCallback(() => {
-    setDrawerMounted(true);
-    Animated.parallel([
-      Animated.timing(drawerX, {
-        toValue: 0,
-        duration: 240,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
-      Animated.timing(backdropOpacity, {
-        toValue: 0.5,
-        duration: 240,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [drawerX, backdropOpacity]);
-
-  const runCloseAnim = useCallback(() => {
-    Animated.parallel([
-      Animated.timing(drawerX, {
-        toValue: -DRAWER_W,
-        duration: 200,
-        easing: Easing.in(Easing.cubic),
-        useNativeDriver: true,
-      }),
-      Animated.timing(backdropOpacity, {
-        toValue: 0,
-        duration: 200,
-        useNativeDriver: true,
-      }),
-    ]).start(({ finished }) => {
-      if (finished) setDrawerMounted(false);
-    });
-  }, [drawerX, backdropOpacity]);
-
-  // Bridge the global open/close signal to the local animation. When
-  // anyone (the hamburger here, the Shop tab in MainTabs, future
-  // triggers) flips the store flag we play the matching animation.
-  useEffect(() => {
-    if (globalDrawerOpen) runOpenAnim();
-    else runCloseAnim();
-  }, [globalDrawerOpen, runOpenAnim, runCloseAnim]);
-
-  const openDrawer = openGlobalDrawer;
-  const closeDrawer = closeGlobalDrawer;
 
   const gallery = useQuery({
     queryKey: ['gallery'],
@@ -160,6 +104,48 @@ export const HomeScreen: React.FC = () => {
     queryFn: catalogService.getCategories,
     staleTime: 10 * 60 * 1000,
   });
+  // Home dynamic content — all three endpoints were built for the web
+  // shop and hide themselves (null / []) when nothing is configured.
+  const deal = useQuery({
+    queryKey: ['todaysDeal'],
+    queryFn: homeContentService.getCurrentDeal,
+    staleTime: 30 * 1000,
+    refetchInterval: 60 * 1000, // countdown-critical: follow admin edits
+  });
+  const farmer = useQuery({
+    queryKey: ['todaysFarmer'],
+    queryFn: homeContentService.getTodaysFarmer,
+    staleTime: 5 * 60 * 1000,
+  });
+  const reviews = useQuery({
+    queryKey: ['approvedReviews'],
+    queryFn: homeContentService.getApprovedReviews,
+    staleTime: 5 * 60 * 1000,
+  });
+  // FIRST10 strip — guests always see the pitch (they'd be eligible
+  // after signing up); signed-in customers only while still eligible.
+  const isAuthenticated = useIsAuthenticated();
+  const firstOrder = useQuery({
+    queryKey: ['firstOrderDiscount', isAuthenticated],
+    queryFn: homeContentService.getFirstOrderDiscount,
+    enabled: isAuthenticated,
+    staleTime: 60 * 1000,
+  });
+  const showFirstOrderStrip =
+    !isAuthenticated || firstOrder.data?.eligible === true;
+
+  // Live cart subtotal drives the savings strip's "You're saving ₹X".
+  const cartSubtotal = useCartStore(s => s.cart?.subtotal ?? 0);
+
+  // Location label for the promise-first header.
+  const location = useLocationStore(s => s.location);
+  const locationLabel = location?.pincode
+    ? `${location.area || location.city || ''}${location.area || location.city ? ', ' : ''}${location.pincode}`
+    : 'Set delivery location';
+
+  // Product quick-sheet (v3): tiles and the deal spotlight open this
+  // instead of jumping straight to the full detail screen.
+  const [sheet, setSheet] = useState<{ productId?: number; deal?: TodaysDeal | null } | null>(null);
 
   const refreshing =
     gallery.isFetching || featured.isFetching || categories.isFetching;
@@ -168,7 +154,10 @@ export const HomeScreen: React.FC = () => {
     gallery.refetch();
     featured.refetch();
     categories.refetch();
-  }, [gallery, featured, categories]);
+    deal.refetch();
+    farmer.refetch();
+    reviews.refetch();
+  }, [gallery, featured, categories, deal, farmer, reviews]);
 
   // Show only products that have real images coming from the backend.
   const featuredList = useMemo(
@@ -205,85 +194,27 @@ export const HomeScreen: React.FC = () => {
         barStyle="dark-content"
         translucent={false}
       />
-      {/* ── Header band ──────────────────────────────────────────────────
-           Richer 3-stop warm gradient (cream → tan → cream) for depth,
-           with a subtle bottom accent strip. Brand mark on the left,
-           profile pill top-right. Search lives in the row below as a
-           filled brand-coloured CTA so it reads as the primary action. */}
-      <LinearGradient
-        colors={[colors.tintSoft, colors.tintMid, colors.tintSoft]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.headerBand}
-      >
-        <View style={styles.topBar}>
-          {/* Hamburger menu — opens the categories side-drawer.
-              Anchored top-left, conventional app pattern. */}
-          <Pressable
-            onPress={openDrawer}
-            android_ripple={{ color: colors.pressed, borderless: true, radius: 22 }}
-            style={({ pressed }) => [
-              styles.menuBtn,
-              pressed && { opacity: 0.85 },
-            ]}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel="Open categories menu"
-          >
-            <Icon name="menu" size={22} color={colors.primary} />
-          </Pressable>
-
-          {/* Animated cow GIF — brand mark, centred between the menu
-              and profile buttons by the topBar's space-between layout.
-              `mixBlendMode: 'multiply'` knocks out the GIF's baked-in
-              white background against the cream gradient. */}
-          <FastImage
-            source={require('../../assets/images/brand-logo.gif')}
-            style={styles.brandImage}
-            resizeMode={FastImage.resizeMode.contain}
-          />
-
-          {/* Profile pill — anchored top-right. Tapping jumps to the
-              ProfileTab (which renders the sign-in prompt for guests
-              or the full profile for authenticated users). */}
-          <Pressable
-            onPress={openProfile}
-            android_ripple={{ color: colors.pressed, borderless: true, radius: 22 }}
-            style={({ pressed }) => [
-              styles.profileBtn,
-              pressed && { opacity: 0.85 },
-            ]}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel="Open profile"
-          >
-            <Icon name="user" size={20} color={colors.primary} />
-          </Pressable>
-        </View>
-
-        {/* DeliverToPill + filled-gradient search CTA, side-by-side. The
-            pill stretches to fill the available width; the search button
-            uses the brand primary gradient so it pops as THE primary
-            action on the home screen. */}
-        <View style={styles.deliverRow}>
-          <View style={{ flex: 1 }}>
-            <DeliverToPill />
-          </View>
-          <Pressable
-            onPress={() => navigation.navigate('Search')}
-            android_ripple={{ color: colors.pressed, borderless: true, radius: 24 }}
-            style={({ pressed }) => [
-              styles.searchBtnWrap,
-              pressed && { opacity: 0.85 },
-            ]}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel="Search products"
-          >
-            <Icon name="search" size={22} color={colors.white} />
-          </Pressable>
-        </View>
-      </LinearGradient>
+      {/* ── v3 market-grade header (approved board) ──────────────────
+           Promise line + location, bell/profile stroke icons, rotating
+           search placeholder, photo category bubbles. The drawer still
+           exists via the Shop tab for the complete list. */}
+      <PromiseHeader
+        categories={categoriesList}
+        locationLabel={locationLabel}
+        searchHints={featuredList.slice(0, 6).map(p => p.name).filter(Boolean)}
+        onLocationPress={() => {
+          const root = navigation.getParent()?.getParent() ?? navigation.getParent();
+          root?.navigate('Location', { screen: 'LocationPicker' });
+        }}
+        onSearchPress={() => navigation.navigate('Search')}
+        onProfilePress={openProfile}
+        onCategoryPress={c =>
+          navigation.navigate('Category', {
+            categoryId: Number(c.id ?? c.categoryId),
+            name: c.name ?? '',
+          })
+        }
+      />
 
       <ScrollView
         contentContainerStyle={styles.scroll}
@@ -297,10 +228,11 @@ export const HomeScreen: React.FC = () => {
           />
         }
       >
-        {/* Hero carousel */}
+        {/* Hero carousel — taller, with the gallery row's heading +
+            description overlaid on a cream scrim (same as web). */}
         {gallery.isLoading ? (
           <Skeleton
-            height={188}
+            height={210}
             style={{
               marginHorizontal: spacing.base,
               marginTop: spacing.base,
@@ -309,36 +241,40 @@ export const HomeScreen: React.FC = () => {
           />
         ) : (
           <View style={styles.heroWrap}>
-            <HeroCarousel images={galleryList} height={188} />
+            {/* v3: hero is clean gallery + admin copy; the farmer gets
+                his own editorial banner below instead of an overlay. */}
+            <HeroCarousel
+              images={galleryList}
+              height={190}
+              onShopPress={() => navigation.getParent()?.navigate('CategoriesTab')}
+            />
           </View>
         )}
 
-        {/* Free shipping promo — wider, more prominent gradient strip */}
-        <LinearGradient
-          colors={colors.gradients.harvest}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={styles.promoStrip}
-        >
-          <View style={styles.promoIconWell}>
-            <Icon name="truck" size={14} color={colors.primaryDark} />
-          </View>
-          <Text
-            variant="bodySmall"
-            color={colors.primaryDark}
-            weight="700"
-            style={{ marginLeft: spacing.sm, flex: 1 }}
-            numberOfLines={1}
-          >
-            FREE delivery on orders above ₹1,000
-          </Text>
-          <Icon name="arrow-right" size={14} color={colors.primaryDark} />
-        </LinearGradient>
+        {/* Savings strip — FIRST10 pitch / live "you're saving ₹X"
+            (server still applies the actual discount at checkout).
+            Hidden once the customer has used the offer. */}
+        <SavingsStrip eligible={showFirstOrderStrip} cartSubtotal={cartSubtotal} />
 
-        {/* (The inline "Shop by category" horizontal list used to live
-            here. It's been replaced by the hamburger ☰ → side-drawer
-            pattern — same data, less vertical scrolling on the home
-            screen, full category list visible at once in the drawer.) */}
+        {/* DEAL OF THE DAY spotlight — tap opens the quick sheet with
+            the deal's variants. Hides when no deal is live or this
+            customer already used it (server decides). */}
+        {deal.data ? (
+          <DealSpotlight deal={deal.data} onPress={d => setSheet({ deal: d })} />
+        ) : null}
+
+        {/* Meet Today's Farmer — editorial banner → full story page. */}
+        {farmer.data ? (
+          <FarmerStoryBanner
+            farmer={farmer.data}
+            onPress={f => navigation.navigate('FarmerStory', { farmer: f })}
+          />
+        ) : null}
+
+        {/* Admin-approved customer reviews. */}
+        {reviews.data && reviews.data.length > 0 ? (
+          <ReviewsCarousel reviews={reviews.data} />
+        ) : null}
 
         {/* Best Sellers */}
         {bestSellers.length > 0 ? (
@@ -350,7 +286,7 @@ export const HomeScreen: React.FC = () => {
             />
             <HorizontalProducts
               products={bestSellers}
-              onPress={goToProduct(navigation)}
+              onPress={id => setSheet({ productId: id })}
               hideBestSellerBadge
             />
           </>
@@ -366,7 +302,7 @@ export const HomeScreen: React.FC = () => {
             />
             <HorizontalProducts
               products={newArrivals}
-              onPress={goToProduct(navigation)}
+              onPress={id => setSheet({ productId: id })}
               hideNewArrivalBadge
             />
           </>
@@ -395,11 +331,7 @@ export const HomeScreen: React.FC = () => {
               >
                 <ProductCard
                   product={p}
-                  onPress={() =>
-                    navigation.navigate('ProductDetail', {
-                      productId: (p.id || p.productId)!,
-                    })
-                  }
+                  onPress={() => setSheet({ productId: (p.id || p.productId)! })}
                 />
               </View>
             ))}
@@ -430,219 +362,29 @@ export const HomeScreen: React.FC = () => {
         <View style={{ height: spacing['2xl'] }} />
       </ScrollView>
 
-      {/* ── Categories side-drawer ────────────────────────────────────
-           Slides in from the left when the hamburger is tapped. The
-           backdrop is a separate Animated.View so it can fade in
-           independently. Tap the backdrop OR the X to dismiss. */}
-      {drawerMounted ? (
-        <Modal
-          visible
-          transparent
-          animationType="none"
-          onRequestClose={closeDrawer}
-          // statusBarTranslucent INTENTIONALLY OMITTED — same crash
-          // root-cause as the WelcomePromoModal: translucent Modal +
-          // react-native-screens + new-architecture races the fragment
-          // manager and throws "No view found for id…". The drawer
-          // panel already pads `paddingTop: insets.top` so the header
-          // clears the status bar correctly without it.
-        >
-          <View style={StyleSheet.absoluteFill}>
-            <Animated.View
-              pointerEvents={drawerMounted ? 'auto' : 'none'}
-              style={[styles.drawerBackdrop, { opacity: backdropOpacity }]}
-            />
-            {/* Backdrop tap-to-close — covers the visible area to the
-                right of the drawer. Using a separate Pressable instead
-                of putting onPress on the backdrop View so the
-                Animated.View opacity transitions don't interfere.
-                Bottom inset matches the drawer so taps in the tab-bar
-                area aren't swallowed (otherwise the user can't switch
-                tabs while the drawer is open). */}
-            <Pressable
-              style={[
-                styles.drawerBackdropTouch,
-                {
-                  left: DRAWER_W,
-                  bottom: TABBAR_HEIGHT + insets.bottom,
-                },
-              ]}
-              onPress={closeDrawer}
-            />
-            <Animated.View
-              style={[
-                styles.drawer,
-                {
-                  width: DRAWER_W,
-                  // Push the header below the status bar / notch.
-                  paddingTop: insets.top + spacing.md,
-                  // CRITICAL: position the PANEL ITSELF above the tab
-                  // bar — not just pad the content. Modal extends to
-                  // the very bottom of the activity; the React
-                  // Navigation tab bar (64dp) renders on top of the
-                  // Modal. Without an explicit `bottom`, the drawer's
-                  // white panel extends behind the tab bar and the two
-                  // visually overlap. Setting bottom = tabBar + system
-                  // gesture inset makes the panel END above the bar.
-                  bottom: TABBAR_HEIGHT + insets.bottom,
-                  transform: [{ translateX: drawerX }],
-                },
-              ]}
-            >
-              <View style={styles.drawerHeader}>
-                <View style={styles.drawerTitleRow}>
-                  <View style={styles.drawerTitleIconWell}>
-                    <Icon name="grid" size={16} color={colors.primary} />
-                  </View>
-                  <Text variant="h5" color={colors.black} weight="800">
-                    Categories
-                  </Text>
-                </View>
-                <Pressable
-                  onPress={closeDrawer}
-                  hitSlop={10}
-                  android_ripple={{ color: colors.pressed, borderless: true, radius: 18 }}
-                  style={styles.drawerCloseBtn}
-                  accessibilityLabel="Close categories"
-                >
-                  <Icon name="x" size={20} color={colors.black} />
-                </Pressable>
-              </View>
-              {categories.isLoading ? (
-                <View style={{ padding: spacing.base, flex: 1 }}>
-                  {Array.from({ length: 6 }).map((_, i) => (
-                    <Skeleton
-                      key={i}
-                      height={48}
-                      borderRadius={radius.md}
-                      style={{ marginBottom: spacing.sm }}
-                    />
-                  ))}
-                </View>
-              ) : (
-                <ScrollView
-                  // flex:1 makes the list area FILL the available
-                  // vertical space inside the drawer panel so the
-                  // footer anchors at the bottom edge with no
-                  // awkward dead gap (industry pattern — Zepto /
-                  // Blinkit / Swiggy drawers always have a
-                  // brand/footer strip pinned to the bottom).
-                  style={{ flex: 1 }}
-                  contentContainerStyle={styles.drawerList}
-                  showsVerticalScrollIndicator={false}
-                >
-                  {categoriesList.map((c, index) => {
-                    const color = CATEGORY_COLORS[index % CATEGORY_COLORS.length];
-                    // Category-accurate emoji instead of the old
-                    // generic Feather cycle (shopping-bag, coffee,
-                    // droplet) which produced confidently wrong
-                    // icons (a coffee cup for Cashew, droplet for
-                    // Chilli). See utils/categoryIcon.ts.
-                    const emoji = iconForCategory(c.name);
-                    const displayName = titleCaseCategory(c.name);
-                    return (
-                      <Pressable
-                        key={`drawer-cat-${c.id ?? c.categoryId ?? index}`}
-                        onPress={() => {
-                          closeDrawer();
-                          navigation.navigate('Category', {
-                            categoryId: (c.id || c.categoryId)!,
-                            name: displayName,
-                          });
-                        }}
-                        android_ripple={{ color: colors.pressed }}
-                        style={styles.drawerItem}
-                      >
-                        <View
-                          style={[
-                            styles.drawerItemIcon,
-                            { backgroundColor: color.bg },
-                          ]}
-                        >
-                          <Text style={styles.drawerItemEmoji}>{emoji}</Text>
-                        </View>
-                        <Text
-                          variant="body"
-                          color={colors.black}
-                          weight="700"
-                          style={{ flex: 1 }}
-                          numberOfLines={1}
-                        >
-                          {displayName}
-                        </Text>
-                        <Icon
-                          name="chevron-right"
-                          size={16}
-                          color={colors.primary}
-                        />
-                      </Pressable>
-                    );
-                  })}
-                  {categoriesList.length === 0 ? (
-                    <Text
-                      variant="bodySmall"
-                      color={colors.textTertiary}
-                      align="center"
-                      style={{ padding: spacing.lg }}
-                    >
-                      No categories yet. Pull down on Home to refresh.
-                    </Text>
-                  ) : null}
-                </ScrollView>
-              )}
-              {/* Footer — anchors at bottom of drawer panel to remove
-                  the awkward dead-space the empty bottom of the panel
-                  used to show. Pattern matches Zepto / Blinkit /
-                  Swiggy: a tappable "view all" CTA above a quiet brand
-                  line. Lives OUTSIDE the ScrollView so it always
-                  stays visible no matter how many categories load. */}
-              <Pressable
-                onPress={() => {
-                  closeDrawer();
-                  navigation.navigate('Shop' as any);
-                }}
-                android_ripple={{ color: colors.pressed }}
-                style={styles.drawerFooter}
-              >
-                <View style={styles.drawerFooterCta}>
-                  <Icon name="grid" size={16} color={colors.primary} />
-                  <Text
-                    variant="bodyBold"
-                    color={colors.primary}
-                    weight="700"
-                    style={{ marginLeft: spacing.sm }}
-                  >
-                    View All Categories
-                  </Text>
-                </View>
-                <Text
-                  variant="caption"
-                  color={colors.textTertiary}
-                  weight="600"
-                  align="center"
-                  style={{ marginTop: 4 }}
-                >
-                  Rythu Bidda Naturals · Farm to your door
-                </Text>
-              </Pressable>
-            </Animated.View>
-          </View>
-        </Modal>
-      ) : null}
 
       {/* Welcome promo — shows once per app session right after the
           user lands on Home. Self-contained: handles its own visibility
           and animations. Will be wired to the backend in a future
           iteration to surface live offers / rewards. */}
       <WelcomePromoModal />
+
+      {/* v3: floating cart pill — the primary cart entry (the Cart
+          tab button is hidden; its stack remains for checkout). */}
+      <FloatingCartPill onPress={() => navigation.getParent()?.navigate('CartTab')} />
+
+      {/* v3: quick product sheet — variants, stepper, add, FIRST10
+          whisper. Full detail page one tap away. */}
+      <ProductQuickSheet
+        visible={!!sheet}
+        productId={sheet?.productId}
+        deal={sheet?.deal}
+        onClose={() => setSheet(null)}
+        onViewDetails={id => navigation.navigate('ProductDetail', { productId: id })}
+      />
     </Container>
   );
 };
-
-function goToProduct(navigation: any) {
-  return (productId: number) =>
-    navigation.navigate('ProductDetail', { productId });
-}
 
 /**
  * Section header with a tinted icon well, the title, and an optional
@@ -702,7 +444,10 @@ const SectionHeader: React.FC<{
 );
 
 const AUTO_SCROLL_INTERVAL_MS = 3500;
-const CARD_STRIDE = PRODUCT_CARD_WIDTH + spacing.md;
+// v3 shelves: ~2.5 tiles per screen width so the peek invites a swipe
+// (Blinkit shelf rhythm) — tighter than the old 2-per-screen cards.
+const SHELF_CARD_WIDTH = Math.max(128, Math.floor((SCREEN_W - 16 * 2 - 24) / 2.5));
+const CARD_STRIDE = SHELF_CARD_WIDTH + spacing.md;
 
 const HorizontalProducts: React.FC<{
   products: Product[];
@@ -768,7 +513,8 @@ const HorizontalProducts: React.FC<{
         <View style={{ marginRight: spacing.md }}>
           <ProductCard
             product={item}
-            width={PRODUCT_CARD_WIDTH}
+            width={SHELF_CARD_WIDTH}
+            compact
             onPress={() => onPress((item.id || item.productId)!)}
             hideBestSellerBadge={hideBestSellerBadge}
             hideNewArrivalBadge={hideNewArrivalBadge}
@@ -878,14 +624,7 @@ const styles = StyleSheet.create({
     marginHorizontal: spacing.base,
     ...shadows.sm,
   },
-  promoIconWell: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  promoEmoji: { fontSize: 16, includeFontPadding: false },
 
   // Section header — bumped breathing room above each section so the
   // page reads as deliberate "curated collections" instead of a tight

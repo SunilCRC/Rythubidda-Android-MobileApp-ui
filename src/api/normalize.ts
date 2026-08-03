@@ -222,6 +222,8 @@ export function normalizeGalleryImage(raw: any): GalleryImage {
     imageUrl: raw.imageUrl ?? raw.image ?? raw.url,
     url: raw.url ?? raw.image,
     title: raw.title ?? raw.heading,
+    heading: raw.heading ?? raw.title,
+    description: raw.description,
     orientation: raw.orientation,
     position: raw.position,
     linkTo: raw.linkTo,

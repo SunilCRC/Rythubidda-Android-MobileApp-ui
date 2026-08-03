@@ -88,6 +88,62 @@ export const DeliverToPill: React.FC = () => {
   );
 };
 
+/**
+ * Single-line variant for the redesigned home header (UX board):
+ * "📍 Deliver to  Kukatpally, 500072 ▾" — one row of text, so it can
+ * never grow tall enough to collide with the search bar below it.
+ * Same store + navigation wiring as the full pill.
+ */
+export const DeliverToInline: React.FC = () => {
+  const navigation = useNavigation<any>();
+  const location = useLocationStore(s => s.location);
+
+  const onPress = () => {
+    const root = navigation.getParent()?.getParent() ?? navigation.getParent();
+    root?.navigate('Location', { screen: 'LocationPicker' });
+  };
+
+  const hasLocation = !!location?.pincode;
+  const title = hasLocation ? buildTitle(location!) : 'Set delivery location';
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [inlineStyles.row, pressed && { opacity: 0.8 }]}
+      hitSlop={8}
+      accessibilityRole="button"
+      accessibilityLabel={
+        hasLocation ? `Deliver to ${location?.pincode}. Tap to change.` : 'Set delivery location'
+      }
+    >
+      <Text style={inlineStyles.pin}>📍</Text>
+      <Text variant="caption" weight="700" color={colors.textTertiary}>
+        Deliver to{' '}
+      </Text>
+      <Text
+        variant="caption"
+        weight="800"
+        color={colors.textPrimary}
+        numberOfLines={1}
+        style={{ flexShrink: 1 }}
+      >
+        {title}
+      </Text>
+      <Text style={inlineStyles.carat}> ▾</Text>
+    </Pressable>
+  );
+};
+
+const inlineStyles = StyleSheet.create({
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexShrink: 1,
+  },
+  pin: { fontSize: 12, includeFontPadding: false, marginRight: 4 },
+  carat: { fontSize: 12, color: colors.primary, fontWeight: '800', includeFontPadding: false },
+});
+
 function buildTitle(loc: DeliveryLocation) {
   const area = loc.area || loc.city;
   return area ? `${area} ${loc.pincode}` : loc.pincode;

@@ -10,7 +10,7 @@ import Animated, {
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { colors } from '../theme/colors';
 import { Text } from '../components/common/Text';
-import { useCartItemCount, useUIStore } from '../store';
+
 import type {
   CartStackParamList,
   CategoriesStackParamList,
@@ -22,6 +22,7 @@ import type {
 
 // Screens
 import { HomeScreen } from '../screens/home/HomeScreen';
+import { FarmerStoryScreen } from '../screens/home/FarmerStoryScreen';
 import { CategoryScreen } from '../screens/catalog/CategoryScreen';
 import { ProductDetailScreen } from '../screens/catalog/ProductDetailScreen';
 import { SearchScreen } from '../screens/catalog/SearchScreen';
@@ -61,6 +62,7 @@ const HomeStackScreen = () => (
     <HomeNav.Screen name="Category" component={CategoryScreen} />
     <HomeNav.Screen name="ProductDetail" component={ProductDetailScreen} />
     <HomeNav.Screen name="Search" component={SearchScreen} />
+    <HomeNav.Screen name="FarmerStory" component={FarmerStoryScreen} />
   </HomeNav.Navigator>
 );
 
@@ -111,6 +113,8 @@ const ProfileStackScreen = () => (
 
 /**
  * Tab icon with a scale+color animation when it becomes focused.
+ * v3 board: custom stroke icons (Feather — one family, identical on
+ * every phone brand) instead of emojis.
  */
 const AnimatedTabIcon: React.FC<{
   name: string;
@@ -149,22 +153,6 @@ const AnimatedTabIcon: React.FC<{
   );
 };
 
-const CartTabIcon: React.FC<{ color: string; size: number; focused: boolean }> = ({
-  color,
-  size,
-  focused,
-}) => {
-  const count = useCartItemCount();
-  return (
-    <AnimatedTabIcon
-      name="shopping-bag"
-      focused={focused}
-      color={color}
-      size={size}
-      badge={count}
-    />
-  );
-};
 
 export const MainTabs: React.FC = () => (
   <Tab.Navigator
@@ -184,11 +172,10 @@ export const MainTabs: React.FC = () => (
       },
       tabBarLabelStyle: { fontSize: 11, fontWeight: '700', marginTop: 2 },
       tabBarIcon: ({ color, size, focused }) => {
-        if (route.name === 'CartTab')
-          return <CartTabIcon color={color} size={size} focused={focused} />;
         const map: Record<string, string> = {
           HomeTab: 'home',
-          CategoriesTab: 'grid',
+          CategoriesTab: 'shopping-bag',
+          CartTab: 'shopping-cart',
           OrdersTab: 'package',
           ProfileTab: 'user',
         };
@@ -208,24 +195,17 @@ export const MainTabs: React.FC = () => (
       name="CategoriesTab"
       component={CategoriesStackScreen}
       options={{ tabBarLabel: 'Shop' }}
-      listeners={({ navigation }) => ({
-        // Intercept the "Shop" tab press: instead of navigating to the
-        // CategoriesTab stack (which would render a separate full-screen
-        // list of categories), open the side-drawer on the home screen.
-        // The drawer renders the same data with less friction and
-        // matches the hamburger-menu behaviour the user expects.
-        tabPress: e => {
-          e.preventDefault();
-          // Make sure we're on Home so the drawer (which is mounted
-          // inside HomeScreen) is in the tree when the open signal fires.
-          // Cast: the typed signature insists on a strongly typed param
-          // object, but bottom-tab `navigate` accepts a bare tab name.
-          (navigation as any).navigate('HomeTab');
-          useUIStore.getState().openCategoriesDrawer();
-        },
-      })}
+      /* v3 feedback: the slide-in side drawer is retired — the Shop
+         tab now opens the full-screen categories page directly. */
     />
-    <Tab.Screen name="CartTab" component={CartStackScreen} options={{ tabBarLabel: 'Cart' }} />
+    {/* v3 board: the floating cart pill is the cart entry — the tab
+        BUTTON is hidden but the stack stays (cart, checkout,
+        addresses, order-success are all navigated via the pill). */}
+    <Tab.Screen
+      name="CartTab"
+      component={CartStackScreen}
+      options={{ tabBarLabel: 'Cart', tabBarButton: () => null }}
+    />
     <Tab.Screen name="OrdersTab" component={OrdersStackScreen} options={{ tabBarLabel: 'Orders' }} />
     <Tab.Screen name="ProfileTab" component={ProfileStackScreen} options={{ tabBarLabel: 'Profile' }} />
   </Tab.Navigator>

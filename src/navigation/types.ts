@@ -13,6 +13,7 @@ export type HomeStackParamList = {
   Category: { categoryId: number; name: string };
   ProductDetail: { productId: number };
   Search: { initialQuery?: string } | undefined;
+  FarmerStory: { farmer: import('../types').TodaysFarmer };
 };
 
 export type CategoriesStackParamList = {

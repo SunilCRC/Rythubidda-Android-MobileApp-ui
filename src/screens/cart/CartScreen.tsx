@@ -9,6 +9,8 @@ import {
 import Icon from 'react-native-vector-icons/Feather';
 import FastImage from 'react-native-fast-image';
 import { useNavigation } from '@react-navigation/native';
+import { useQuery } from '@tanstack/react-query';
+import { homeContentService } from '../../api/services';
 import {
   Button,
   Card,
@@ -35,6 +37,15 @@ export const CartScreen: React.FC = () => {
   useEffect(() => {
     if (isAuth) refresh();
   }, [isAuth, refresh]);
+
+  // FIRST10 pitch — shown while the signed-in customer is still
+  // eligible so they know the 10% lands at checkout automatically.
+  const firstOrder = useQuery({
+    queryKey: ['firstOrderDiscount'],
+    queryFn: homeContentService.getFirstOrderDiscount,
+    enabled: isAuth,
+    staleTime: 30 * 1000,
+  });
 
   if (!isAuth) {
     return (
@@ -122,6 +133,17 @@ export const CartScreen: React.FC = () => {
                   Order Summary
                 </Text>
                 <Row label="Subtotal" value={formatINR(subtotal)} bold />
+                {firstOrder.data?.eligible ? (
+                  <Text
+                    variant="caption"
+                    weight="700"
+                    color={colors.primaryDark}
+                    style={{ marginTop: spacing.xs }}
+                  >
+                    🎁 10% first-order discount will be applied automatically
+                    at checkout.
+                  </Text>
+                ) : null}
                 <Text
                   variant="caption"
                   color={colors.textTertiary}

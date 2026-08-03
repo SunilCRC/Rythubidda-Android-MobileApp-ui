@@ -192,6 +192,24 @@ function getApiKey(): string {
   return (Config.GOOGLE_MAPS_API_KEY as string | undefined) ?? '';
 }
 
+/**
+ * Google web services (geocode/json etc.) validate an ANDROID-restricted
+ * key by checking these two headers against the key's app restriction:
+ * the app's package name + the SHA-1 of its signing certificate (no
+ * colons). Without them the Android key gets REQUEST_DENIED — the same
+ * way the old website key did. Cert comes from .env so a release build
+ * (different keystore) can override it without a code change.
+ */
+function androidIdentityHeaders(): Record<string, string> {
+  return {
+    Accept: 'application/json',
+    'X-Android-Package': 'com.rythubiddamobile',
+    'X-Android-Cert':
+      (Config.GOOGLE_MAPS_CERT_SHA1 as string | undefined) ??
+      '5E8F16062EA3CD2C4A0D547876BAA6F38CABF625',
+  };
+}
+
 export async function reverseGeocode(
   lat: number,
   lng: number,
@@ -257,7 +275,7 @@ async function reverseGeocodeOnce(
     res = await fetch(url, {
       method: 'GET',
       signal: controller.signal,
-      headers: { Accept: 'application/json' },
+      headers: androidIdentityHeaders(),
     });
   } catch (e: any) {
     clearTimeout(timer);
@@ -372,7 +390,7 @@ export async function forwardGeocode(
     res = await fetch(url, {
       method: 'GET',
       signal: controller.signal,
-      headers: { Accept: 'application/json' },
+      headers: androidIdentityHeaders(),
     });
   } catch (e: any) {
     clearTimeout(timer);

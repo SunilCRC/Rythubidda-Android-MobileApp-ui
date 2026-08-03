@@ -29,6 +29,12 @@ export const ENDPOINTS = {
   SEARCH_SUGGESTIONS: '/api/v1/shop/search/suggestions',
   GALLERY_MAIN: '/api/v1/shop/gallery/main',
   BANNERS_ACTIVE: '/api/v1/shop/banners/active',
+  TODAYS_DEAL_CURRENT: '/api/v1/shop/todays-deals/current',
+  TODAYS_FARMER: '/api/v1/shop/farmers/todays-farmer',
+  FARMER_DETAIL: (id: number | string) => `/api/v1/shop/farmers/${id}`,
+  REVIEWS_APPROVED: '/api/v1/shop/reviews/approved',
+  FIRST_ORDER_DISCOUNT: '/api/v1/shop/first-order-discount',
+  SYNC_VERSION: '/api/v1/shop/sync-version',
   PINCODE_VALIDATE: '/api/v1/shop/pincode/validate',
   DELIVERY_CENTERS: '/api/v1/shop/delivery-centers',
 

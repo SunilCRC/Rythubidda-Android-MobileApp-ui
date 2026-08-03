@@ -7,7 +7,7 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import RazorpayCheckout from 'react-native-razorpay';
 import {
   Button,
@@ -24,11 +24,11 @@ import { radius, spacing } from '../../theme/spacing';
 import {
   addressService,
   cartService,
+  homeContentService,
   paymentService,
 } from '../../api/services';
 import { forwardGeocode } from '../../utils/googleGeocode';
 import { calculateShippingMobile } from '../../utils/mobileShipping';
-import { getDrivingDistanceKm } from '../../utils/googleDistance';
 import { formatKm } from '../../utils/format';
 import {
   useAuthStore,
@@ -73,6 +73,17 @@ export const CheckoutScreen: React.FC = () => {
   // successful order so OrdersScreen re-fetches and the user's new
   // order is visible immediately instead of after a manual refresh.
   const queryClient = useQueryClient();
+
+  // FIRST10 — the backend charges 10% off the first order on its own
+  // (Razorpay amount and COD order both come out discounted). This
+  // query only makes the SCREEN show the same numbers the customer
+  // will actually be charged.
+  const firstOrder = useQuery({
+    queryKey: ['firstOrderDiscount', user?.customerId],
+    queryFn: homeContentService.getFirstOrderDiscount,
+    enabled: !!user,
+    staleTime: 30 * 1000,
+  });
 
   // Re-load the address list every time Checkout REGAINS FOCUS — not
   // just on mount. Without this, when the user navigates from Checkout
@@ -211,59 +222,64 @@ export const CheckoutScreen: React.FC = () => {
             '· centers in store:', shippingConfig?.centers?.length ?? 0);
         }
 
-        // Swap straight-line (Haversine) distance for the REAL driving
-        // distance via Google Distance Matrix. Haversine is fine for
-        // picking the nearest center (driving distance correlates), but
-        // the user-facing "X km from <store>" line + the cost calc must
-        // match what Google Maps shows for the same route — otherwise
-        // a 19 km Haversine reads as a 30 km drive, the displayed
-        // number looks broken, and shipping is mis-priced.
-        //
-        // getDrivingDistanceKm NEVER throws — falls back to
-        // Haversine × 1.4 if the API is unreachable, so checkout still
-        // works in offline / key-missing scenarios.
-        let drivingKm = result.distanceKm;
-        if (
-          typeof result.centerLat === 'number' &&
-          typeof result.centerLng === 'number'
-        ) {
-          const dm = await getDrivingDistanceKm(
-            result.centerLat,
-            result.centerLng,
-            lat!,
-            lng!,
-          );
-          drivingKm = dm.km;
-          if (__DEV__) {
-            // eslint-disable-next-line no-console
-            console.log(
-              `[checkout] driving distance: ${drivingKm.toFixed(2)} km (source=${dm.source}) ` +
-              `vs Haversine ${result.distanceKm.toFixed(2)} km`,
-            );
-          }
-        }
-
+        // The local result decides SERVICEABILITY (same radius rule as
+        // the server) and provides an offline fallback price. The
+        // AUTHORITATIVE km + fee — the ones Razorpay/COD actually
+        // charge — come from the backend engine below. The app used to
+        // fetch Google driving distance itself here, but its browser
+        // API key is rejected server-side (REQUEST_DENIED) so it only
+        // ever produced the ×1.4 estimate — while the backend charged
+        // the REAL driving fee. One engine now: backend displays =
+        // backend charges.
         if (!result.applicable) {
           setShippingCost(undefined);
-          // Even on out-of-range, show driving distance so the user
-          // sees an accurate "you're X km away" message.
-          setDistanceKm(drivingKm);
+          setDistanceKm(result.distanceKm);
           setCenterName(result.centerName);
           setFreeDelivery(false);
           setOutOfRange(true);
           return;
         }
 
-        // Recompute cost using driving distance + the resolved per-km
-        // rate from the calculator (per-center override > global > const).
-        const ratePerKm = result.ratePerKm ?? 0;
-        const drivingCost = result.isFree ? 0 : Math.round(ratePerKm * drivingKm);
-
-        setShippingCost(drivingCost);
+        // Seed the UI with the local estimate so something sensible
+        // shows even if the backend call below fails (offline, etc.).
+        setShippingCost(result.isFree ? 0 : result.cost);
         setFreeDelivery(result.isFree);
-        setDistanceKm(drivingKm);
+        setDistanceKm(result.distanceKm);
         setCenterName(result.centerName);
         setOutOfRange(false);
+
+        // ── Backend override — the single pricing engine ──────────
+        // Same endpoint the web checkout displays; prices on Google
+        // driving km server-side (key IP-restricted to the server).
+        if (cart?.cartId) {
+          try {
+            const server = await cartService.calculateShipping(
+              cart.cartId,
+              selectedAddress.postcode ?? '',
+              { lat: lat!, lng: lng! },
+            );
+            if (typeof server?.shippingCost === 'number') {
+              setShippingCost(server.shippingCost);
+              setFreeDelivery(!!server.isFreeDelivery);
+              if (typeof server.distanceKm === 'number') {
+                setDistanceKm(server.distanceKm);
+              }
+              if (server.deliveryCenterName) {
+                setCenterName(server.deliveryCenterName);
+              }
+              if (__DEV__) {
+                // eslint-disable-next-line no-console
+                console.log(
+                  `[checkout] backend shipping: ₹${server.shippingCost} · ` +
+                  `${server.distanceKm ?? '?'} km · free=${!!server.isFreeDelivery} ` +
+                  `(local est was ₹${result.cost} · ${result.distanceKm.toFixed(2)} km)`,
+                );
+              }
+            }
+          } catch {
+            // Backend unreachable — the local estimate stays on screen.
+          }
+        }
       } catch (e: any) {
         if (__DEV__) {
           // eslint-disable-next-line no-console
@@ -313,7 +329,13 @@ export const CheckoutScreen: React.FC = () => {
   const effectiveShipping = freeDelivery || subtotal >= (shippingConfig?.freeAboveCartAmount ?? SHIPPING_CONFIG.freeAboveCartAmount)
     ? 0
     : shippingCost ?? 0;
-  const total = subtotal + effectiveShipping;
+  // 10% first-order discount on the item subtotal (never shipping) —
+  // mirrors the backend's applyFirstOrderDiscount exactly.
+  const discountPct = firstOrder.data?.discountPct ?? 10;
+  const discountAmount = firstOrder.data?.eligible
+    ? Math.round(subtotal * discountPct) / 100
+    : 0;
+  const total = subtotal - discountAmount + effectiveShipping;
 
   const startPayment = async () => {
     if (!addressId) {
@@ -555,6 +577,12 @@ export const CheckoutScreen: React.FC = () => {
           ))}
           <Divider spacing_={spacing.sm} />
           <SummaryRow label="Subtotal" value={formatINR(subtotal)} />
+          {discountAmount > 0 ? (
+            <SummaryRow
+              label={`🎁 First-order discount (${firstOrder.data?.code ?? 'FIRST10'})`}
+              value={`− ${formatINR(discountAmount)}`}
+            />
+          ) : null}
           {/* Delivery row — clean Zepto / Swiggy / Blinkit pattern.
               We DELIBERATELY don't expose distance or warehouse name
               to the customer. The driving km used for the fee is
