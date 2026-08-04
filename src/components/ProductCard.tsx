@@ -192,13 +192,6 @@ export const ProductCard: React.FC<Props> = ({
           onError={() => setImgError(true)}
         />
         {renderRibbon()}
-        {discountPercent ? (
-          <View style={styles.discountPill}>
-            <Text variant="caption" color={colors.white} weight="800">
-              {discountPercent}% OFF
-            </Text>
-          </View>
-        ) : null}
 
         {/* ADD on the image's bottom-right corner — the Zepto/Blinkit
             pattern. The button lives on the image, so the price line
@@ -323,7 +316,6 @@ export const ProductCard: React.FC<Props> = ({
               >
                 {(selectedOpt?.name || selectedOpt?.label) ?? ''}
                 {displayPrice ? ` — ${formatINR(displayPrice)}` : ''}
-                {hasDiscount ? ` (was ${formatINR(displayMrp!)})` : ''}
               </Text>
               <Icon name="chevron-down" size={14} color={colors.primary} />
             </Pressable>
@@ -337,16 +329,6 @@ export const ProductCard: React.FC<Props> = ({
             <Text variant="body" color={colors.textPrimary} weight="800">
               {formatINR(displayPrice)}
             </Text>
-            {hasDiscount ? (
-              <Text
-                variant="caption"
-                color={colors.textTertiary}
-                weight="700"
-                style={styles.mrp}
-              >
-                {formatINR(displayMrp!)}
-              </Text>
-            ) : null}
           </View>
         </View>
       </View>

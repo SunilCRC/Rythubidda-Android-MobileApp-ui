@@ -214,11 +214,6 @@ export const ProductQuickSheet: React.FC<Props> = ({
                   </Text>
                   <Text variant="caption" weight="800" color={colors.primaryDark}>
                     ₹{o.price}
-                    {o.mrp && o.mrp > o.price ? (
-                      <Text variant="caption" weight="600" color={colors.textTertiary}>
-                        {'  '}₹{o.mrp}
-                      </Text>
-                    ) : null}
                   </Text>
                 </Pressable>
               );

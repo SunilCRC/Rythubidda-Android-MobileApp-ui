@@ -378,19 +378,6 @@ export const ProductDetailScreen: React.FC<Props> = ({ route, navigation }) => {
             </Pressable>
           </View>
 
-          {/* Discount pill */}
-          {discountPercent ? (
-            <View
-              style={[
-                styles.heroDiscount,
-                { top: insets.top + spacing.sm + 56 },
-              ]}
-            >
-              <Text variant="caption" weight="800" color={colors.white}>
-                {discountPercent}% OFF
-              </Text>
-            </View>
-          ) : null}
 
           {/* Dots */}
           {images.length > 1 ? (
@@ -484,28 +471,6 @@ export const ProductDetailScreen: React.FC<Props> = ({ route, navigation }) => {
             >
               {formatINR(effectivePrice)}
             </Text>
-            {hasDiscount ? (
-              <Text
-                variant="bodyBold"
-                weight="600"
-                color={colors.textTertiary}
-                style={styles.mrp}
-                numberOfLines={1}
-              >
-                {formatINR(effectiveMrp!)}
-              </Text>
-            ) : null}
-            {hasDiscount ? (
-              <Text
-                variant="bodyBold"
-                weight="800"
-                color={colors.success}
-                style={styles.discountText}
-                numberOfLines={1}
-              >
-                {discountPercent}% OFF
-              </Text>
-            ) : null}
             {unit ? (
               <>
                 <Text

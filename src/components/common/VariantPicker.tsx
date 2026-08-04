@@ -88,29 +88,11 @@ export const VariantPicker: React.FC<Props> = ({
                   <Text variant="bodyBold" color={colors.textPrimary}>
                     {label}
                   </Text>
-                  {hasDiscount ? (
-                    <Text
-                      variant="caption"
-                      color={colors.success}
-                      style={{ marginTop: 2 }}
-                    >
-                      Save {formatINR(mrp! - price)}
-                    </Text>
-                  ) : null}
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
                   <Text variant="bodyBold" color={colors.cta}>
                     {formatINR(price)}
                   </Text>
-                  {hasDiscount ? (
-                    <Text
-                      variant="caption"
-                      color={colors.textMuted}
-                      style={{ textDecorationLine: 'line-through' }}
-                    >
-                      {formatINR(mrp)}
-                    </Text>
-                  ) : null}
                 </View>
               </Pressable>
             );
