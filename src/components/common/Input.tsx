@@ -157,13 +157,11 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    fontFamily: fonts.regular,
+    // Real bold FILE (Nunito Sans Bold) — no more synthetic bolding;
+    // see typography.ts for the per-weight font-file setup.
+    fontFamily: fonts.bold,
     fontSize: fontSizes.base,
-    // Bumped from 600 → 700. Only Montserrat-Regular.ttf is bundled
-    // (no Semibold/Bold variants), so Android renders weight 600 as
-    // synthetic faux-bold which looks weak/pale on many devices.
-    // Pushing to 700 makes the synthetic weight noticeably heavier.
-    fontWeight: '700',
+    fontWeight: 'normal',
     // Pure black instead of palette.neutral[800] (#161612) — testers
     // reported the typed text looked pale; maxing contrast removes
     // any device-specific tinting (Samsung OneUI, MIUI etc. shift the

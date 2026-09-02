@@ -26,6 +26,24 @@ import Config from 'react-native-config';
 const AUTOCOMPLETE_URL = 'https://places.googleapis.com/v1/places:autocomplete';
 const DETAILS_URL_PREFIX = 'https://places.googleapis.com/v1/places/';
 
+/**
+ * The API key is ANDROID-restricted, and Google validates that on
+ * HTTP calls via these two headers (package name + signing-cert
+ * SHA-1, no colons). Without them the Places API answers 403
+ * "Requests from this Android client application <empty> are
+ * blocked" — which surfaced as "no address suggestions". Same fix
+ * as googleGeocode.ts. Cert comes from .env so a release keystore
+ * can override without a code change.
+ */
+function androidIdentityHeaders(): Record<string, string> {
+  return {
+    'X-Android-Package': 'com.rythubiddamobile',
+    'X-Android-Cert':
+      (Config.GOOGLE_MAPS_CERT_SHA1 as string | undefined) ??
+      '5E8F16062EA3CD2C4A0D547876BAA6F38CABF625',
+  };
+}
+
 // Field mask for Place Details — only ask for what we actually use.
 // Each extra field potentially raises cost, so keep this tight.
 const PLACE_DETAILS_FIELDS = [
@@ -170,6 +188,7 @@ export async function autocomplete(
       headers: {
         'Content-Type': 'application/json',
         'X-Goog-Api-Key': apiKey,
+        ...androidIdentityHeaders(),
       },
       body: JSON.stringify({
         input: trimmed,
@@ -317,6 +336,7 @@ export async function placeDetails(
       headers: {
         'X-Goog-Api-Key': apiKey,
         'X-Goog-FieldMask': PLACE_DETAILS_FIELDS,
+        ...androidIdentityHeaders(),
       },
     });
   } catch (e: any) {

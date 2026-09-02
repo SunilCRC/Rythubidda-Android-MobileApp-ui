@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import FastImage from 'react-native-fast-image';
 import Icon from 'react-native-vector-icons/Feather';
+import LinearGradient from 'react-native-linear-gradient';
 import { Text } from '../common';
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
@@ -43,9 +44,15 @@ export const DealSpotlight: React.FC<Props> = ({ deal, onPress }) => {
   return (
     <Pressable
       onPress={() => onPress(deal)}
-      style={({ pressed }) => [styles.card, pressed && { opacity: 0.94 }]}
+      style={({ pressed }) => [pressed && { opacity: 0.94 }]}
       accessibilityRole="button"
       accessibilityLabel={`Deal of the day: ${deal.productName}`}
+    >
+    <LinearGradient
+      colors={['#FFF8EC', '#FFE9C4']}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={styles.card}
     >
       {deal.productImage ? (
         <FastImage source={{ uri: deal.productImage }} style={styles.img} resizeMode={FastImage.resizeMode.cover} />
@@ -91,6 +98,7 @@ export const DealSpotlight: React.FC<Props> = ({ deal, onPress }) => {
       <View style={styles.go}>
         <Icon name="arrow-right" size={17} color={colors.white} />
       </View>
+    </LinearGradient>
     </Pressable>
   );
 };
@@ -102,19 +110,18 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     marginHorizontal: spacing.base,
     marginTop: spacing.base,
-    backgroundColor: '#FFF7EA',
     borderWidth: 1,
-    borderColor: '#EFD9B4',
+    borderColor: '#F2D6A4',
     borderRadius: 18,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
+    paddingVertical: spacing.sm + 2,
   },
   img: {
-    width: 72,
-    height: 72,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
+    width: 64,
+    height: 64,
+    borderRadius: 13,
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
     backgroundColor: colors.surface,
   },
   imgFallback: { alignItems: 'center', justifyContent: 'center' },

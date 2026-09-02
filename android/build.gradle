@@ -47,4 +47,29 @@ allprojects {
     }
 }
 
+// ── Windows MAX_PATH workaround for native (C++) builds ──────────────────
+// Windows caps paths at 260 chars unless LongPathsEnabled is set. CMake
+// object files land in <module>/.cxx/<config>/<hash>/<abi>/CMakeFiles/…,
+// and reanimated's deepest source
+//   Common/cpp/reanimated/CSS/interpolation/transforms/
+//   TransformOperationInterpolator.cpp
+// produced a 263-char object path under the RELEASE config —
+// "RelWithDebInfo" is 9 chars longer than "Debug", which is exactly why
+// debug builds always worked and `bundleRelease` died with
+//   ninja: error: manifest 'build.ninja' still dirty after 100 tries
+//
+// Moving the staging dir to a short root reclaims ~50 characters for
+// every native module. Harmless on macOS/Linux (skipped there).
+def shortNativeBuildRoot = "C:/rb-cxx"
+subprojects { sp ->
+    if (!System.getProperty("os.name").toLowerCase().contains("windows")) return
+    sp.afterEvaluate {
+        def androidExt = sp.extensions.findByName("android")
+        if (androidExt?.externalNativeBuild?.cmake != null) {
+            androidExt.externalNativeBuild.cmake.buildStagingDirectory =
+                    new File("${shortNativeBuildRoot}/${sp.name}")
+        }
+    }
+}
+
 apply plugin: "com.facebook.react.rootproject"

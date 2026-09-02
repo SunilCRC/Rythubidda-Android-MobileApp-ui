@@ -13,14 +13,20 @@ import type { ApprovedReview } from '../../types';
  */
 interface Props {
   reviews: ApprovedReview[];
+  /** Half-width card for the farmer+reviews duo row — no ‹ ›
+      arrows, tighter type, parent owns the margins. */
+  compact?: boolean;
+  /** Actual rendered card width — REQUIRED for correct paging when
+      the card isn't full-bleed (the duo row). */
+  pageWidth?: number;
 }
 
 const SCREEN_W = Dimensions.get('window').width;
 
-export const ReviewsCarousel: React.FC<Props> = ({ reviews }) => {
+export const ReviewsCarousel: React.FC<Props> = ({ reviews, compact, pageWidth }) => {
   const listRef = useRef<FlatList>(null);
   const [index, setIndex] = useState(0);
-  const width = SCREEN_W - spacing.base * 2;
+  const width = pageWidth ?? SCREEN_W - spacing.base * 2;
 
   useEffect(() => {
     if (reviews.length < 2) return;
@@ -51,12 +57,19 @@ export const ReviewsCarousel: React.FC<Props> = ({ reviews }) => {
   if (!reviews || reviews.length === 0) return null;
 
   return (
-    <View style={styles.card}>
-      <View style={styles.head}>
-        <Text variant="body" weight="800" color={colors.textPrimary}>
+    <View style={[styles.card, compact && styles.cardCompact]}>
+      <View style={[styles.head, compact && styles.headCompact]}>
+        <Text
+          variant="body"
+          weight="800"
+          color={colors.textPrimary}
+          numberOfLines={1}
+          style={compact ? { fontSize: 12, flexShrink: 1 } : undefined}
+        >
           What Our Customers Say
         </Text>
         {/* ‹ › paging circles per the UX board */}
+        {compact ? null : (
         <View style={styles.nav}>
           <Pressable
             onPress={() => goTo(index - 1)}
@@ -77,6 +90,7 @@ export const ReviewsCarousel: React.FC<Props> = ({ reviews }) => {
             <Text style={styles.navGlyph}>›</Text>
           </Pressable>
         </View>
+        )}
       </View>
       <FlatList
         ref={listRef}
@@ -94,19 +108,27 @@ export const ReviewsCarousel: React.FC<Props> = ({ reviews }) => {
           const stars = Math.max(1, Math.min(5, item.rating || 5));
           const quote = (item.review || '').trim() || (item.title || '').trim();
           return (
-            <View style={{ width, paddingHorizontal: spacing.base, paddingBottom: spacing.base }}>
-              <Text style={styles.quoteMark}>“</Text>
+            <View style={{ width, paddingHorizontal: compact ? spacing.md : spacing.base, paddingBottom: compact ? spacing.sm + 2 : spacing.base }}>
+              <Text style={compact ? { ...styles.quoteMark, fontSize: 18, lineHeight: 20, marginTop: 2 } : styles.quoteMark}>“</Text>
               <Text
                 variant="bodySmall"
                 weight="600"
                 color={colors.textPrimary}
-                numberOfLines={3}
-                style={{ lineHeight: 19 }}
+                numberOfLines={compact ? 2 : 3}
+                style={compact ? { fontSize: 11, lineHeight: 15 } : { lineHeight: 19 }}
               >
                 {quote}
               </Text>
-              <Text style={styles.stars}>{'★'.repeat(stars)}{'☆'.repeat(5 - stars)}</Text>
-              <Text variant="caption" weight="700" color={colors.textTertiary} numberOfLines={1}>
+              <Text style={compact ? { ...styles.stars, fontSize: 11, marginTop: 4, marginBottom: 2 } : styles.stars}>
+                {'★'.repeat(stars)}{'☆'.repeat(5 - stars)}
+              </Text>
+              <Text
+                variant="caption"
+                weight="700"
+                color={colors.textTertiary}
+                numberOfLines={1}
+                style={compact ? { fontSize: 9 } : undefined}
+              >
                 — {item.customerName || 'Verified Customer'}
                 {item.productName ? ` · ${item.productName}` : ''}
               </Text>
@@ -114,16 +136,20 @@ export const ReviewsCarousel: React.FC<Props> = ({ reviews }) => {
           );
         }}
       />
-      {/* "n / N" counter — centered under the card per the UX board. */}
-      <Text
-        variant="caption"
-        weight="800"
-        color={colors.textMuted}
-        align="center"
-        style={styles.counter}
-      >
-        {index + 1} / {reviews.length}
-      </Text>
+      {/* "n / N" counter — full-width card only; the compact duo-row
+          card drops it to save vertical space (auto-rotation still
+          runs silently). */}
+      {compact ? null : (
+        <Text
+          variant="caption"
+          weight="800"
+          color={colors.textMuted}
+          align="center"
+          style={styles.counter}
+        >
+          {index + 1} / {reviews.length}
+        </Text>
+      )}
     </View>
   );
 };
@@ -138,12 +164,23 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     ...shadows.sm,
   },
+  // Duo-row variant: parent row owns the margins; card fills its
+  // half-column and matches the farmer banner's height.
+  cardCompact: {
+    marginHorizontal: 0,
+    marginTop: 0,
+    flex: 1,
+  },
   head: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: spacing.base,
     paddingBottom: spacing.xs,
+  },
+  headCompact: {
+    padding: spacing.md,
+    paddingBottom: 0,
   },
   quoteMark: {
     fontSize: 26,

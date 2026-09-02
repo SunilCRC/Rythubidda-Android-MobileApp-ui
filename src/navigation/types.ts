@@ -51,6 +51,8 @@ export type ProfileStackParamList = {
   Privacy: undefined;
   RefundPolicy: undefined;
   ShippingPolicy: undefined;
+  /** One screen for both — see CloseAccountScreen. */
+  CloseAccount: { mode: 'DEACTIVATE' | 'DELETE' };
 };
 
 export type MainTabParamList = {

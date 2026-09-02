@@ -1,7 +1,7 @@
 import React from 'react';
 import { Text as RNText, TextProps, TextStyle } from 'react-native';
 import { colors } from '../../theme/colors';
-import { textVariants } from '../../theme/typography';
+import { familyFor, textVariants } from '../../theme/typography';
 
 type Variant = keyof typeof textVariants;
 
@@ -23,11 +23,18 @@ export const Text: React.FC<Props> = ({
   ...rest
 }) => {
   const variantStyle = textVariants[variant];
+  // Brand fonts ship as one FILE per weight (see typography.ts), so
+  // the effective weight picks the font FAMILY: Baloo 2 for headings,
+  // Nunito Sans for everything else. fontWeight is then forced to
+  // 'normal' so Android never synthetically re-bolds a bold file.
+  const effectiveWeight = weight ?? variantStyle.fontWeight;
+  const isHeading = variant.startsWith('h');
   const composed: TextStyle = {
     ...variantStyle,
+    fontFamily: familyFor(effectiveWeight, isHeading),
+    fontWeight: 'normal',
     color: color ?? colors.textPrimary,
     ...(align ? { textAlign: align } : {}),
-    ...(weight ? { fontWeight: weight } : {}),
   };
   return (
     <RNText {...rest} style={[composed, style as TextStyle]}>

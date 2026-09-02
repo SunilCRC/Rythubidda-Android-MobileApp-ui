@@ -10,6 +10,7 @@ import Animated, {
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { colors } from '../theme/colors';
 import { Text } from '../components/common/Text';
+import { useCartItemCount } from '../store';
 
 import type {
   CartStackParamList,
@@ -26,7 +27,7 @@ import { FarmerStoryScreen } from '../screens/home/FarmerStoryScreen';
 import { CategoryScreen } from '../screens/catalog/CategoryScreen';
 import { ProductDetailScreen } from '../screens/catalog/ProductDetailScreen';
 import { SearchScreen } from '../screens/catalog/SearchScreen';
-import { CategoriesListScreen } from '../screens/catalog/CategoriesListScreen';
+import { ShopScreen } from '../screens/catalog/ShopScreen';
 import { CartScreen } from '../screens/cart/CartScreen';
 import { CheckoutScreen } from '../screens/cart/CheckoutScreen';
 import { AddressesScreen } from '../screens/profile/AddressesScreen';
@@ -39,6 +40,7 @@ import { WriteReviewScreen } from '../screens/orders/WriteReviewScreen';
 import { ProfileScreen } from '../screens/profile/ProfileScreen';
 import { EditProfileScreen } from '../screens/profile/EditProfileScreen';
 import { ChangePasswordScreen } from '../screens/profile/ChangePasswordScreen';
+import { CloseAccountScreen } from '../screens/profile/CloseAccountScreen';
 import { AboutScreen } from '../screens/static/AboutScreen';
 import { ContactScreen } from '../screens/static/ContactScreen';
 import { TermsScreen } from '../screens/static/TermsScreen';
@@ -68,7 +70,9 @@ const HomeStackScreen = () => (
 
 const CategoriesStackScreen = () => (
   <CategoriesNav.Navigator screenOptions={stackOptions}>
-    <CategoriesNav.Screen name="CategoriesMain" component={CategoriesListScreen} />
+    {/* Shop = aisle browser: category rail left, products right
+        (user feedback — replaces the plain categories list). */}
+    <CategoriesNav.Screen name="CategoriesMain" component={ShopScreen} />
     <CategoriesNav.Screen name="Category" component={CategoryScreen} />
     <CategoriesNav.Screen name="ProductDetail" component={ProductDetailScreen} />
     <CategoriesNav.Screen name="Search" component={SearchScreen} />
@@ -100,6 +104,7 @@ const ProfileStackScreen = () => (
     <ProfileNav.Screen name="ProfileMain" component={ProfileScreen} />
     <ProfileNav.Screen name="EditProfile" component={EditProfileScreen} />
     <ProfileNav.Screen name="ChangePassword" component={ChangePasswordScreen} />
+    <ProfileNav.Screen name="CloseAccount" component={CloseAccountScreen} />
     <ProfileNav.Screen name="Addresses" component={AddressesScreen} />
     <ProfileNav.Screen name="AddEditAddress" component={AddEditAddressScreen} />
     <ProfileNav.Screen name="About" component={AboutScreen} />
@@ -154,6 +159,23 @@ const AnimatedTabIcon: React.FC<{
 };
 
 
+const CartTabIcon: React.FC<{ color: string; size: number; focused: boolean }> = ({
+  color,
+  size,
+  focused,
+}) => {
+  const count = useCartItemCount();
+  return (
+    <AnimatedTabIcon
+      name="shopping-cart"
+      focused={focused}
+      color={color}
+      size={size}
+      badge={count}
+    />
+  );
+};
+
 export const MainTabs: React.FC = () => (
   <Tab.Navigator
     screenOptions={({ route }) => ({
@@ -170,8 +192,10 @@ export const MainTabs: React.FC = () => (
         paddingBottom: 8,
         paddingTop: 6,
       },
-      tabBarLabelStyle: { fontSize: 11, fontWeight: '700', marginTop: 2 },
+      tabBarLabelStyle: { fontSize: 11, fontFamily: 'NunitoSans-Bold', fontWeight: 'normal' as const, marginTop: 2 },
       tabBarIcon: ({ color, size, focused }) => {
+        if (route.name === 'CartTab')
+          return <CartTabIcon color={color} size={size} focused={focused} />;
         const map: Record<string, string> = {
           HomeTab: 'home',
           CategoriesTab: 'shopping-bag',
@@ -194,17 +218,17 @@ export const MainTabs: React.FC = () => (
     <Tab.Screen
       name="CategoriesTab"
       component={CategoriesStackScreen}
-      options={{ tabBarLabel: 'Shop' }}
-      /* v3 feedback: the slide-in side drawer is retired — the Shop
-         tab now opens the full-screen categories page directly. */
+      options={{ tabBarLabel: 'Categories' }}
+      /* Aisle browser (rail + products). Label renamed Shop →
+         Categories per user feedback. */
     />
-    {/* v3 board: the floating cart pill is the cart entry — the tab
-        BUTTON is hidden but the stack stays (cart, checkout,
-        addresses, order-success are all navigated via the pill). */}
+    {/* Cart is reachable BOTH ways (user feedback): the tab button
+        with a live badge here, plus the floating pill on Home and
+        Category screens. */}
     <Tab.Screen
       name="CartTab"
       component={CartStackScreen}
-      options={{ tabBarLabel: 'Cart', tabBarButton: () => null }}
+      options={{ tabBarLabel: 'Cart' }}
     />
     <Tab.Screen name="OrdersTab" component={OrdersStackScreen} options={{ tabBarLabel: 'Orders' }} />
     <Tab.Screen name="ProfileTab" component={ProfileStackScreen} options={{ tabBarLabel: 'Profile' }} />

@@ -175,11 +175,15 @@ export const WelcomePromoModal: React.FC = () => {
             align="center"
             style={styles.subtitle}
           >
-            On all orders above{' '}
+            On orders above{' '}
             <Text variant="body" weight="800" color={colors.primary}>
               ₹1,000
             </Text>
-            . Hand-picked farm produce, delivered straight from the farmer.
+            {/* Distance-band honesty: far areas may still pay a reduced
+                fee above the threshold, so "all orders" would over-
+                promise. Exact fee always shows at checkout. */}
+            {' '}for nearby locations. Hand-picked farm produce, delivered
+            straight from the farmer.
           </Text>
 
           {/* Highlight strip — "limited time" style ribbon */}

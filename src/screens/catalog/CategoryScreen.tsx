@@ -100,7 +100,11 @@ export const CategoryScreen: React.FC<Props> = ({ route, navigation }) => {
           })}
         </View>
 
-        {isLoading || !data ? (
+        {/* Skeletons only while GENUINELY loading — a settled empty
+            category must show "No products", never endless
+            placeholders (the old `!data` guard hung forever when the
+            backend returned an empty/undefined list). */}
+        {isLoading || (data === undefined && isFetching) ? (
           <View style={styles.skeletonGrid}>
             {Array.from({ length: 6 }).map((_, i) => (
               <Skeleton

@@ -37,10 +37,22 @@ export const shippingService = {
               : Number(c.perKmRate),
         }))
       : [];
+    const bands = Array.isArray(raw?.shippingBands)
+      ? raw.shippingBands
+          .map((b: any) => ({
+            minKm: Number(b?.minKm ?? 0),
+            maxKm: Number(b?.maxKm ?? 0),
+            freeAboveAmount:
+              b?.freeAboveAmount == null ? null : Number(b.freeAboveAmount),
+            feeAboveThreshold: Number(b?.feeAboveThreshold ?? 0),
+          }))
+          .sort((a: { minKm: number }, b: { minKm: number }) => a.minKm - b.minKm)
+      : [];
     return {
       centers,
       perKmRate: Number(raw?.perKmRate ?? 10),
       freeAboveCartAmount: Number(raw?.freeAboveCartAmount ?? 1000),
+      bands,
     };
   },
 };

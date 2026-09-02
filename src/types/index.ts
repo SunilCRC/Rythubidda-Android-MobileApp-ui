@@ -263,7 +263,23 @@ export interface DeliveryCenter {
 export interface ShippingConfig {
   centers: DeliveryCenter[];
   perKmRate: number;
+  /** Legacy single threshold — fallback when `bands` is empty. */
   freeAboveCartAmount: number;
+  /**
+   * Distance-banded free-shipping policy (admin-managed). Band matched
+   * on km: minKm <= d < maxKm. Above `freeAboveAmount` the customer
+   * pays `feeAboveThreshold` (0 = free) instead of the per-km price.
+   * Display/estimates only — the backend quote is the charging
+   * authority.
+   */
+  bands: ShippingBand[];
+}
+
+export interface ShippingBand {
+  minKm: number;
+  maxKm: number;
+  freeAboveAmount: number | null;
+  feeAboveThreshold: number;
 }
 
 export interface DeliveryInfo {

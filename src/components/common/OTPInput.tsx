@@ -187,8 +187,8 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderRadius: radius.lg,
     textAlign: 'center',
-    fontFamily: fonts.regular,
+    fontFamily: fonts.extrabold,
     fontSize: 22,
-    fontWeight: '800',
+    fontWeight: 'normal',
   },
 });

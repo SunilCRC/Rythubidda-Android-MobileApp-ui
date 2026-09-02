@@ -278,13 +278,10 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    fontFamily: fonts.regular,
+    // Real bold FILE (Nunito Sans Bold) — see typography.ts.
+    fontFamily: fonts.bold,
     fontSize: fontSizes.base,
-    // See Input.tsx — Montserrat has no bundled semibold/bold variant,
-    // so weight 600 renders as synthetic faux-bold that looks pale on
-    // Android. Bumped to bold (700) + pure black + includeFontPadding
-    // off so the typed query reads dark and crisp.
-    fontWeight: fontWeights.bold,
+    fontWeight: 'normal',
     color: '#000000',
     includeFontPadding: false,
     padding: 0,

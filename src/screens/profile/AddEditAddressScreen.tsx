@@ -672,12 +672,10 @@ const styles = StyleSheet.create({
   },
   searchInput: {
     flex: 1,
-    fontFamily: fonts.regular,
+    // Real bold FILE (Nunito Sans Bold) — see typography.ts.
+    fontFamily: fonts.bold,
     fontSize: fontSizes.base,
-    // See Input.tsx — only Montserrat-Regular is bundled; weight 600
-    // renders as synthetic faux-bold that looks pale. Bumped to 700
-    // + pure black + includeFontPadding:false so typed text reads dark.
-    fontWeight: '700',
+    fontWeight: 'normal',
     color: '#000000',
     includeFontPadding: false,
     padding: 0,

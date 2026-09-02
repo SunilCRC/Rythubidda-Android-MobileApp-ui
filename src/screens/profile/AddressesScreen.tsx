@@ -26,6 +26,10 @@ import { showToast } from '../../utils/toast';
 import { toArray } from '../../utils/format';
 import type { CustomerAddress } from '../../types';
 
+// Same cap as the web Profile page — the backend address table is shared,
+// so both clients must agree on the limit.
+const MAX_ADDRESSES = 10;
+
 export const AddressesScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const [addresses, setAddresses] = useState<CustomerAddress[] | null>(null);
@@ -55,6 +59,20 @@ export const AddressesScreen: React.FC = () => {
       load();
     }, [load]),
   );
+
+  const handleAddAddress = () => {
+    if ((addresses?.length ?? 0) >= MAX_ADDRESSES) {
+      void confirm({
+        title: 'Address limit reached',
+        message: 'Maximum 10 addresses allowed. Please delete an existing address to add a new one.',
+        confirmText: 'OK',
+        singleAction: true,
+        icon: 'map-pin',
+      });
+      return;
+    }
+    navigation.navigate('AddEditAddress');
+  };
 
   const handleDelete = async (id: number) => {
     const ok = await confirm({
@@ -93,7 +111,7 @@ export const AddressesScreen: React.FC = () => {
           title="No addresses saved"
           subtitle="Add a delivery address so you can check out in seconds."
           actionLabel="Add address"
-          onAction={() => navigation.navigate('AddEditAddress')}
+          onAction={handleAddAddress}
         />
       ) : (
         <>
@@ -155,7 +173,7 @@ export const AddressesScreen: React.FC = () => {
           <View style={styles.addBar}>
             <Button
               title="Add new address"
-              onPress={() => navigation.navigate('AddEditAddress')}
+              onPress={handleAddAddress}
               fullWidth
               size="lg"
               variant="primary"

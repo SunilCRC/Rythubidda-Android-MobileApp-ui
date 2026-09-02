@@ -55,11 +55,12 @@ export const PromiseHeader: React.FC<Props> = ({
       style={styles.band}
     >
       <View style={styles.topRow}>
-        {/* Brand logo — the real cow-animation mark, BIG (it carries
-            the header now that the promise line is gone), multiply-
-            blended so its white background melts into the cream. */}
+        {/* Brand logo — the full RYTHU BIDDA plough mark, the SAME
+            asset the splash screen uses so splash → home feels
+            continuous. Multiply blend melts its white background
+            into the cream header. */}
         <Image
-          source={require('../../assets/images/cow-animation.gif')}
+          source={require('../../assets/images/brand-logo.gif')}
           style={styles.logo}
           resizeMode="contain"
           accessibilityLabel="Rythu Bidda"
@@ -140,9 +141,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: spacing.sm,
   },
+  // The plough logo is a wide lockup (~2.9:1) — size it to carry the
+  // header without crowding the profile button on 360dp phones.
   logo: {
-    width: 150,
-    height: 54,
+    width: 172,
+    height: 60,
     mixBlendMode: 'multiply' as any,
   },
   locRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },

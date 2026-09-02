@@ -15,9 +15,12 @@ import type { TodaysFarmer } from '../../types';
 interface Props {
   farmer: TodaysFarmer;
   onPress: (farmer: TodaysFarmer) => void;
+  /** Half-width card for the farmer+reviews duo row — vertical
+      layout, no avatar circle, parent owns the margins. */
+  compact?: boolean;
 }
 
-export const FarmerStoryBanner: React.FC<Props> = ({ farmer, onPress }) => {
+export const FarmerStoryBanner: React.FC<Props> = ({ farmer, onPress, compact }) => {
   const days = farmer.harvestedDaysAgo ?? 0;
   const meta = [
     farmer.cropSpecialty || null,
@@ -30,7 +33,7 @@ export const FarmerStoryBanner: React.FC<Props> = ({ farmer, onPress }) => {
   return (
     <Pressable
       onPress={() => onPress(farmer)}
-      style={({ pressed }) => [pressed && { opacity: 0.92 }]}
+      style={({ pressed }) => [compact && { flex: 1 }, pressed && { opacity: 0.92 }]}
       accessibilityRole="button"
       accessibilityLabel={`Meet today's farmer ${farmer.name}`}
     >
@@ -38,27 +41,46 @@ export const FarmerStoryBanner: React.FC<Props> = ({ farmer, onPress }) => {
         colors={['#34531F', '#4C7029', '#7BA23F']}
         start={{ x: 0, y: 0.5 }}
         end={{ x: 1, y: 0.5 }}
-        style={styles.banner}
+        style={[styles.banner, compact && styles.bannerCompact]}
       >
         <View style={{ flex: 1, minWidth: 0 }}>
-          <Text variant="caption" weight="800" color="rgba(255,255,255,0.85)" style={styles.kicker}>
+          <Text
+            variant="caption"
+            weight="800"
+            color="rgba(255,255,255,0.85)"
+            style={compact ? { ...styles.kicker, fontSize: 7.5, letterSpacing: 1 } : styles.kicker}
+          >
             MEET TODAY'S FARMER
           </Text>
-          <Text variant="h5" weight="800" color="#FFFFFF" numberOfLines={1} style={{ marginTop: 2 }}>
+          <Text
+            variant={compact ? 'body' : 'h5'}
+            weight="800"
+            color="#FFFFFF"
+            numberOfLines={1}
+            style={{ marginTop: 2 }}
+          >
             {farmer.name}
           </Text>
-          <Text variant="caption" weight="600" color="rgba(255,255,255,0.9)" numberOfLines={1} style={{ marginTop: 1 }}>
+          <Text
+            variant="caption"
+            weight="600"
+            color="rgba(255,255,255,0.9)"
+            numberOfLines={2}
+            style={compact ? { marginTop: 1, fontSize: 9.5, lineHeight: 13 } : { marginTop: 1 }}
+          >
             {meta}
           </Text>
-          <View style={styles.cta}>
-            <Text variant="caption" weight="800" color="#34531F">
+          <View style={[styles.cta, compact && styles.ctaCompact]}>
+            <Text variant="caption" weight="800" color="#34531F" style={compact ? { fontSize: 10 } : undefined}>
               His Story →
             </Text>
           </View>
         </View>
-        <View style={styles.ava}>
-          <Icon name="user" size={26} color="#8B532E" />
-        </View>
+        {!compact ? (
+          <View style={styles.ava}>
+            <Icon name="user" size={26} color="#8B532E" />
+          </View>
+        ) : null}
       </LinearGradient>
     </Pressable>
   );
@@ -74,6 +96,20 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     paddingHorizontal: spacing.base,
     paddingVertical: spacing.md,
+  },
+  // Duo-row variant: parent row owns margins; the card fills its
+  // half-column and matches the reviews card's height.
+  bannerCompact: {
+    marginHorizontal: 0,
+    marginTop: 0,
+    flex: 1,
+    paddingVertical: spacing.sm + 2,
+    paddingHorizontal: spacing.md,
+  },
+  ctaCompact: {
+    marginTop: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 3.5,
   },
   kicker: { fontSize: 8.5, letterSpacing: 1.4 },
   cta: {

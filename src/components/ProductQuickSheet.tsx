@@ -125,10 +125,14 @@ export const ProductQuickSheet: React.FC<Props> = ({
     : pickFirstImage(detail.data?.image, detail.data?.imageUrl, detail.data?.images?.[0]);
   const maxQty = deal && deal.maxQtyPerCustomer > 0 ? deal.maxQtyPerCustomer : 30;
   const lineTotal = (selected?.price ?? 0) * qty;
+  // Out-of-stock guard — the sheet is the primary add path, so it
+  // must enforce stock exactly like the product card does.
+  const outOfStock = !deal && detail.data?.inStock === false;
   const eligible = !isAuthenticated || firstOrder.data?.eligible === true;
   const whisperSaving = Math.round(lineTotal * 0.10);
 
   const handleAdd = async () => {
+    if (outOfStock) return;
     if (!requireAuth()) return;
     if (!resolvedProductId || !selected || busy) return;
     setBusy(true);
@@ -243,17 +247,23 @@ export const ProductQuickSheet: React.FC<Props> = ({
           </View>
           <Pressable
             onPress={handleAdd}
-            disabled={busy || !selected}
-            style={({ pressed }) => [styles.buyBtn, (pressed || busy) && { opacity: 0.85 }]}
+            disabled={busy || !selected || outOfStock}
+            style={({ pressed }) => [
+              styles.buyBtn,
+              outOfStock && styles.buyBtnDisabled,
+              (pressed || busy) && { opacity: 0.85 },
+            ]}
             accessibilityRole="button"
-            accessibilityLabel="Add to cart"
+            accessibilityLabel={outOfStock ? 'Out of stock' : 'Add to cart'}
           >
             <Text variant="bodySmall" weight="800" color={colors.white}>
-              {busy ? 'Adding…' : 'Add to Cart'}
+              {outOfStock ? 'Out of stock' : busy ? 'Adding…' : 'Add to Cart'}
             </Text>
-            <Text variant="bodySmall" weight="800" color={colors.white}>
-              ₹{lineTotal}
-            </Text>
+            {!outOfStock ? (
+              <Text variant="bodySmall" weight="800" color={colors.white}>
+                ₹{lineTotal}
+              </Text>
+            ) : null}
           </Pressable>
         </View>
 
@@ -265,7 +275,10 @@ export const ProductQuickSheet: React.FC<Props> = ({
           </Text>
         ) : null}
 
-        {resolvedProductId ? (
+        {/* Full-details link is for CATALOG products only — the deal
+            sheet hides it (user feedback): the detail page shows the
+            regular price, which would contradict the deal price. */}
+        {resolvedProductId && !deal ? (
           <Pressable
             onPress={() => {
               onClose();
@@ -369,6 +382,10 @@ const styles = StyleSheet.create({
     borderRadius: 13,
     paddingHorizontal: spacing.base,
     paddingVertical: 12,
+  },
+  buyBtnDisabled: {
+    backgroundColor: colors.disabled,
+    justifyContent: 'center',
   },
   whisper: { marginTop: 10, fontSize: 9.5 },
 });

@@ -15,6 +15,8 @@ import { Button, Input, Text } from '../../components/common';
 import { Container } from '../../components/layout/Container';
 import { loginSchema, LoginInput } from '../../utils/validation';
 import { useAuthStore } from '../../store';
+import { errorCodeFrom } from '../../api/services';
+import { ReactivateSheet } from '../../components/account/ReactivateSheet';
 import { showToast } from '../../utils/toast';
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
@@ -24,6 +26,11 @@ type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
 
 export const LoginScreen: React.FC<Props> = ({ navigation }) => {
   const [submitting, setSubmitting] = useState(false);
+  const [reactivateFor, setReactivateFor] = useState<{
+    phone: string;
+    password: string;
+    pendingDeletion: boolean;
+  } | null>(null);
   const login = useAuthStore(s => s.login);
 
   const {
@@ -42,9 +49,36 @@ export const LoginScreen: React.FC<Props> = ({ navigation }) => {
       showToast.success('Welcome back!');
       navigation.getParent()?.goBack();
     } catch (e: any) {
+      // The password was right — the account is just switched off, and the
+      // customer switched it off themselves. Offer the way back rather than
+      // a dead-end "login failed".
+      const code = errorCodeFrom(e);
+      if (code === 'ACCOUNT_DEACTIVATED' || code === 'ACCOUNT_PENDING_DELETION') {
+        setReactivateFor({
+          phone: data.phone,
+          password: data.password,
+          pendingDeletion: code === 'ACCOUNT_PENDING_DELETION',
+        });
+        return;
+      }
       showToast.error('Login failed', e?.message);
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const retryAfterRestore = async () => {
+    const creds = reactivateFor;
+    setReactivateFor(null);
+    if (!creds) return;
+    try {
+      // The account is live again but this device still has no token — the
+      // earlier sign-in was rejected before one was issued.
+      await login(creds.phone, creds.password);
+      showToast.success('Your account is active again. Welcome back!');
+      navigation.getParent()?.goBack();
+    } catch {
+      showToast.success('Your account is active again — please sign in.');
     }
   };
 
@@ -168,6 +202,15 @@ export const LoginScreen: React.FC<Props> = ({ navigation }) => {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <ReactivateSheet
+        visible={reactivateFor !== null}
+        phone={reactivateFor?.phone ?? ''}
+        password={reactivateFor?.password ?? ''}
+        pendingDeletion={reactivateFor?.pendingDeletion ?? false}
+        onClose={() => setReactivateFor(null)}
+        onRestored={retryAfterRestore}
+      />
     </Container>
   );
 };

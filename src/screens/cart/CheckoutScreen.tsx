@@ -215,6 +215,7 @@ export const CheckoutScreen: React.FC = () => {
           shippingConfig?.centers,
           shippingConfig?.perKmRate,
           shippingConfig?.freeAboveCartAmount,
+          shippingConfig?.bands,
         );
         if (__DEV__) {
           // eslint-disable-next-line no-console
@@ -326,9 +327,11 @@ export const CheckoutScreen: React.FC = () => {
   }
 
   const subtotal = cart.subtotal || cart.items.reduce((s, i) => s + i.price * i.qty, 0);
-  const effectiveShipping = freeDelivery || subtotal >= (shippingConfig?.freeAboveCartAmount ?? SHIPPING_CONFIG.freeAboveCartAmount)
-    ? 0
-    : shippingCost ?? 0;
+  // Trust the computed quote (backend when it arrived, band-aware local
+  // estimate otherwise). The old `subtotal >= threshold → 0` shortcut
+  // here would silently erase the distance-band fee (e.g. ₹100 for far
+  // deliveries above ₹1000) and show a total the server won't honour.
+  const effectiveShipping = freeDelivery ? 0 : shippingCost ?? 0;
   // 10% first-order discount on the item subtotal (never shipping) —
   // mirrors the backend's applyFirstOrderDiscount exactly.
   const discountPct = firstOrder.data?.discountPct ?? 10;
@@ -455,7 +458,7 @@ export const CheckoutScreen: React.FC = () => {
       <ScreenHeader title="Checkout" />
       <ScrollView contentContainerStyle={{ padding: spacing.base, paddingBottom: 120 }}>
         {/* Address */}
-        <Text variant="label" color={colors.textSecondary} style={styles.sectionLabel}>
+        <Text variant="label" weight="800" color={colors.textPrimary} style={styles.sectionLabel}>
           Delivery Address
         </Text>
         {addresses.length === 0 ? (
@@ -489,14 +492,14 @@ export const CheckoutScreen: React.FC = () => {
                   <Text variant="bodyBold" color={colors.textPrimary}>
                     {a.firstname} {a.lastname}
                   </Text>
-                  <Text variant="bodySmall" color={colors.textSecondary}>
+                  <Text variant="bodySmall" weight="700" color={colors.textSecondary}>
                     {a.address1}
                     {a.address2 ? `, ${a.address2}` : ''}
                   </Text>
-                  <Text variant="bodySmall" color={colors.textSecondary}>
+                  <Text variant="bodySmall" weight="700" color={colors.textSecondary}>
                     {a.city}, {a.state} - {a.postcode}
                   </Text>
-                  <Text variant="caption" color={colors.textTertiary}>
+                  <Text variant="caption" weight="700" color={colors.textTertiary}>
                     {a.telephone}
                   </Text>
                 </View>
@@ -536,7 +539,7 @@ export const CheckoutScreen: React.FC = () => {
         ) : null}
 
         {/* Payment Method */}
-        <Text variant="label" color={colors.textSecondary} style={styles.sectionLabel}>
+        <Text variant="label" weight="800" color={colors.textPrimary} style={styles.sectionLabel}>
           Payment Method
         </Text>
         <PaymentOption
@@ -555,13 +558,13 @@ export const CheckoutScreen: React.FC = () => {
         />
 
         {/* Summary */}
-        <Text variant="label" color={colors.textSecondary} style={styles.sectionLabel}>
+        <Text variant="label" weight="800" color={colors.textPrimary} style={styles.sectionLabel}>
           Order Summary
         </Text>
         <Card>
           {cart.items.map((it, i) => (
             <View key={`sm-${it.itemId ?? i}`} style={styles.summaryLine}>
-              <Text variant="bodySmall" color={colors.textPrimary} numberOfLines={1} style={{ flex: 1 }}>
+              <Text variant="bodySmall" weight="600" color={colors.textPrimary} numberOfLines={1} style={{ flex: 1 }}>
                 {(it.name || it.product?.name) ?? 'Item'}
                 {/* Show variant label (e.g. "500g", "1kg", "250ml") so
                     Order Summary matches what the Cart screen shows.
@@ -570,7 +573,7 @@ export const CheckoutScreen: React.FC = () => {
                 {it.qtyOptionLabel ? ` (${it.qtyOptionLabel})` : ''}
                 {' × '}{it.qty}
               </Text>
-              <Text variant="bodySmall" color={colors.textPrimary}>
+              <Text variant="bodySmall" weight="700" color={colors.textPrimary}>
                 {formatINR(it.price * it.qty)}
               </Text>
             </View>
@@ -596,7 +599,7 @@ export const CheckoutScreen: React.FC = () => {
             label="Delivery"
             value={
               effectiveShipping === 0
-                ? freeDelivery || subtotal >= (shippingConfig?.freeAboveCartAmount ?? SHIPPING_CONFIG.freeAboveCartAmount)
+                ? freeDelivery
                   ? 'FREE'
                   : formatINR(0)
                 : formatINR(effectiveShipping)
@@ -609,7 +612,7 @@ export const CheckoutScreen: React.FC = () => {
 
       <View style={styles.bottomBar}>
         <View style={{ flex: 1 }}>
-          <Text variant="caption" color={colors.textSecondary}>
+          <Text variant="caption" weight="700" color={colors.textSecondary}>
             Total
           </Text>
           <Text variant="h5" color={colors.primaryDark}>
@@ -652,7 +655,7 @@ const PaymentOption: React.FC<{
       <Text variant="bodyBold" color={colors.textPrimary}>
         {label}
       </Text>
-      <Text variant="caption" color={colors.textSecondary}>
+      <Text variant="caption" weight="700" color={colors.textSecondary}>
         {subtitle}
       </Text>
     </View>
@@ -668,7 +671,7 @@ const SummaryRow: React.FC<{
 }> = ({ label, value, bold, subtitle }) => (
   <View style={[styles.summaryLine, { alignItems: subtitle ? 'flex-start' : 'center' }]}>
     <View style={{ flex: 1 }}>
-      <Text variant={bold ? 'bodyBold' : 'body'} color={colors.textSecondary}>
+      <Text variant={bold ? 'bodyBold' : 'body'} weight={bold ? '800' : '700'} color={bold ? colors.textPrimary : colors.textSecondary}>
         {label}
       </Text>
       {subtitle ? (

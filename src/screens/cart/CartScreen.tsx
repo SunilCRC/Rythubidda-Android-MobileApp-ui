@@ -66,8 +66,13 @@ export const CartScreen: React.FC = () => {
   // (where the customer's selected address gives us the lat/lng to
   // compute distance). The cart screen stays focused on items + subtotal.
 
+  // Same minimum-order rule as the web cart (Cart.tsx): checkout opens
+  // only from ₹101 — the "Add ₹X more" note below mirrors its wording.
+  const MIN_ORDER = 101;
+  const belowMinOrder = subtotal < MIN_ORDER;
+
   const handleCheckout = () => {
-    if (items.length === 0) return;
+    if (items.length === 0 || belowMinOrder) return;
     navigation.navigate('Checkout');
   };
 
@@ -156,13 +161,23 @@ export const CartScreen: React.FC = () => {
             }
           />
           <View style={styles.bottomBar}>
-            <View style={{ flex: 1 }}>
-              <Text variant="caption" color={colors.textSecondary}>
-                Subtotal
-              </Text>
-              <Price amount={subtotal} size="md" />
+            {belowMinOrder && (
+              <View style={styles.minOrderNote}>
+                <Icon name="alert-circle" size={14} color={colors.warning} />
+                <Text variant="caption" color={colors.textPrimary} style={{ flex: 1 }}>
+                  Add {formatINR(MIN_ORDER - subtotal)} more to place your order
+                </Text>
+              </View>
+            )}
+            <View style={styles.bottomBarRow}>
+              <View style={{ flex: 1 }}>
+                <Text variant="caption" color={colors.textSecondary}>
+                  Subtotal
+                </Text>
+                <Price amount={subtotal} size="md" />
+              </View>
+              <Button title="Checkout" onPress={handleCheckout} disabled={belowMinOrder} size="lg" style={{ flex: 1 }} />
             </View>
-            <Button title="Checkout" onPress={handleCheckout} size="lg" style={{ flex: 1 }} />
           </View>
         </>
       )}
@@ -200,8 +215,15 @@ const CartLineItem: React.FC<{
       </Pressable>
       <View style={styles.qtyRow}>
         <View style={styles.stepper}>
-          <Pressable onPress={onDecrement} style={styles.stepBtn} hitSlop={6}>
-            <Icon name="minus" size={16} color={colors.primary} />
+          {/* Minus greys out at qty 1 — removing the line is the
+              trash button's job, not the stepper's. */}
+          <Pressable
+            onPress={onDecrement}
+            disabled={item.qty <= 1}
+            style={[styles.stepBtn, item.qty <= 1 && { opacity: 0.35 }]}
+            hitSlop={6}
+          >
+            <Icon name="minus" size={16} color={item.qty <= 1 ? colors.textTertiary : colors.primary} />
           </Pressable>
           <Text variant="bodyBold" style={styles.stepValue}>
             {item.qty}
@@ -273,8 +295,20 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderTopWidth: 1,
     borderTopColor: colors.divider,
+    gap: spacing.sm,
+  },
+  bottomBarRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
+  },
+  minOrderNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.warningSoft,
+    borderRadius: radius.md,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
   },
 });

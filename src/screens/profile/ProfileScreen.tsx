@@ -16,6 +16,8 @@ interface MenuItem {
   icon: string;
   label: string;
   screen?: string;
+  /** Route params, for screens that serve more than one purpose. */
+  params?: Record<string, unknown>;
   danger?: boolean;
   onPress?: () => void;
   /** Foreground colour for the icon (defaults to primary) */
@@ -137,6 +139,30 @@ export const ProfileScreen: React.FC = () => {
         },
       ],
     },
+    // Kept apart from the everyday "Account" group at the top: closing an
+    // account shouldn't sit one row away from editing your name.
+    {
+      title: 'Close Account',
+      items: [
+        {
+          icon: 'pause-circle',
+          label: 'Deactivate Account',
+          screen: 'CloseAccount',
+          params: { mode: 'DEACTIVATE' },
+          tint: colors.warning,
+          tintBg: colors.warningSoft,
+        },
+        {
+          icon: 'trash-2',
+          label: 'Delete Account',
+          screen: 'CloseAccount',
+          params: { mode: 'DELETE' },
+          danger: true,
+          tint: colors.error,
+          tintBg: colors.errorSoft,
+        },
+      ],
+    },
     {
       title: '',
       items: [
@@ -202,7 +228,9 @@ export const ProfileScreen: React.FC = () => {
                   <View key={`it-${idx}`}>
                     <Pressable
                       onPress={() =>
-                        item.onPress ? item.onPress() : navigation.navigate(item.screen!)
+                        item.onPress
+                          ? item.onPress()
+                          : navigation.navigate(item.screen!, item.params)
                       }
                       android_ripple={{ color: colors.pressed }}
                       style={styles.menuRow}

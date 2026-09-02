@@ -18,6 +18,16 @@ export const ENDPOINTS = {
   BILLING_ADDRESS: '/api/v1/customer/billing-address',
   SHIPPING_ADDRESS: '/api/v1/customer/shipping-address',
 
+  // Account lifecycle — deactivate / delete / restore
+  ACCOUNT_ELIGIBILITY: '/api/v1/customer/account/eligibility',
+  ACCOUNT_OTP: '/api/v1/customer/account/otp',
+  ACCOUNT_DEACTIVATE: '/api/v1/customer/account/deactivate',
+  ACCOUNT_DELETE: '/api/v1/customer/account/delete',
+  // No-token pair: restores a deactivated account at sign-in, and backs
+  // the public web deletion page.
+  ACCOUNT_RECOVERY_OTP: '/api/v1/customer/account/recovery/otp',
+  ACCOUNT_RECOVERY_CONFIRM: '/api/v1/customer/account/recovery/confirm',
+
   // Shop / catalog (public)
   CATEGORIES: '/api/v1/shop/categories',
   FEATURED_PRODUCTS: '/api/v1/shop/products/featured',

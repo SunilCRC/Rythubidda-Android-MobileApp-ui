@@ -29,7 +29,6 @@ import { FloatingCartPill } from '../../components/home/FloatingCartPill';
 import { ProductQuickSheet } from '../../components/ProductQuickSheet';
 import { ReviewsCarousel } from '../../components/home/ReviewsCarousel';
 import { ProductCard } from '../../components/ProductCard';
-import { WelcomePromoModal } from '../../components/feedback/WelcomePromoModal';
 import { colors } from '../../theme/colors';
 import { radius, shadows, spacing } from '../../theme/spacing';
 import { useCartStore, useIsAuthenticated, useLocationStore } from '../../store';
@@ -41,6 +40,9 @@ import type { Category, GalleryImage, Product, TodaysDeal } from '../../types';
 // Show ~2 cards per screen width — slight peek of the third to hint "scroll me".
 const SCREEN_W = Dimensions.get('window').width;
 // (grid tiles size themselves via styles.gridItem 48.5%)
+
+// Farmer + Reviews duo row: each card takes half the row minus the gap.
+const DUO_CARD_W = Math.floor((SCREEN_W - 16 * 2 - 10) / 2);
 
 // Responsive brand-image width — bounded so it doesn't dominate small
 // phones (320dp) or look tiny on tablets. The header reserves ~120dp
@@ -201,7 +203,10 @@ export const HomeScreen: React.FC = () => {
       <PromiseHeader
         categories={categoriesList}
         locationLabel={locationLabel}
-        searchHints={featuredList.slice(0, 6).map(p => p.name).filter(Boolean)}
+        searchHints={[
+          ...featuredList.slice(0, 8).map(p => p.name),
+          ...categoriesList.slice(0, 5).map(c => titleCaseCategory(c.name)),
+        ].filter(Boolean)}
         onLocationPress={() => {
           const root = navigation.getParent()?.getParent() ?? navigation.getParent();
           root?.navigate('Location', { screen: 'LocationPicker' });
@@ -263,18 +268,31 @@ export const HomeScreen: React.FC = () => {
           <DealSpotlight deal={deal.data} onPress={d => setSheet({ deal: d })} />
         ) : null}
 
-        {/* Meet Today's Farmer — editorial banner → full story page. */}
-        {farmer.data ? (
-          <FarmerStoryBanner
-            farmer={farmer.data}
-            onPress={f => navigation.navigate('FarmerStory', { farmer: f })}
-          />
+        {/* Farmer + Reviews — SIDE BY SIDE in one row (user feedback):
+            two half-width cards. Either one alone takes the full row. */}
+        {farmer.data || (reviews.data && reviews.data.length > 0) ? (
+          <View style={styles.duoRow}>
+            {farmer.data ? (
+              <View style={{ flex: 1 }}>
+                <FarmerStoryBanner
+                  compact
+                  farmer={farmer.data}
+                  onPress={f => navigation.navigate('FarmerStory', { farmer: f })}
+                />
+              </View>
+            ) : null}
+            {reviews.data && reviews.data.length > 0 ? (
+              <View style={{ flex: 1 }}>
+                <ReviewsCarousel
+                  compact
+                  reviews={reviews.data}
+                  pageWidth={farmer.data ? DUO_CARD_W : SCREEN_W - 32}
+                />
+              </View>
+            ) : null}
+          </View>
         ) : null}
 
-        {/* Admin-approved customer reviews. */}
-        {reviews.data && reviews.data.length > 0 ? (
-          <ReviewsCarousel reviews={reviews.data} />
-        ) : null}
 
         {/* Best Sellers */}
         {bestSellers.length > 0 ? (
@@ -362,12 +380,6 @@ export const HomeScreen: React.FC = () => {
         <View style={{ height: spacing['2xl'] }} />
       </ScrollView>
 
-
-      {/* Welcome promo — shows once per app session right after the
-          user lands on Home. Self-contained: handles its own visibility
-          and animations. Will be wired to the backend in a future
-          iteration to surface live offers / rewards. */}
-      <WelcomePromoModal />
 
       {/* v3: floating cart pill — the primary cart entry (the Cart
           tab button is hidden; its stack remains for checkout). */}
@@ -610,6 +622,15 @@ const styles = StyleSheet.create({
   // Hero
   heroWrap: {
     paddingTop: spacing.base,
+  },
+
+  // Farmer + Reviews side-by-side row.
+  duoRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: 10,
+    marginHorizontal: spacing.base,
+    marginTop: spacing.base,
   },
 
   // Promo strip — extra top space so it floats clearly under the

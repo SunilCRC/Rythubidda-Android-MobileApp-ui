@@ -1,22 +1,58 @@
-import { Platform, TextStyle } from 'react-native';
+import { TextStyle } from 'react-native';
 
 /**
- * Montserrat variable font is linked on both Android and iOS via react-native.config.js.
- * Font family name must match the asset filename (minus extension).
+ * Brand typography (2026-08 rebrand):
+ *   • Baloo 2      — headings. Chunky rounded forms that match the
+ *     RYTHU BIDDA plough-logo lettering (Ek Type; has a Telugu
+ *     sibling, Baloo Tammudu 2, for a future bilingual UI).
+ *   • Nunito Sans  — body/labels. Friendly and highly legible at
+ *     small sizes.
+ *
+ * WHY file-per-weight instead of one variable font: React Native on
+ * Android renders custom variable fonts at their DEFAULT instance
+ * (weight 400) for every numeric fontWeight below bold — that's
+ * exactly why the old Montserrat setup looked pale everywhere.
+ * `familyFor()` maps an effective weight to the correct static file
+ * (the filename IS the Android font family), and the Text component
+ * then sets fontWeight:'normal' so Android never fake-bolds an
+ * already-bold file.
  */
 
 export const fonts = {
-  regular: Platform.select({
-    ios: 'Montserrat',
-    android: 'Montserrat',
-    default: 'Montserrat',
-  }) as string,
-  italic: Platform.select({
-    ios: 'Montserrat-Italic',
-    android: 'Montserrat-Italic',
-    default: 'Montserrat-Italic',
-  }) as string,
+  regular: 'NunitoSans-Regular',
+  semibold: 'NunitoSans-SemiBold',
+  bold: 'NunitoSans-Bold',
+  extrabold: 'NunitoSans-ExtraBold',
+  headingSemibold: 'Baloo2-SemiBold',
+  headingBold: 'Baloo2-Bold',
+  headingExtrabold: 'Baloo2-ExtraBold',
 };
+
+/** Numeric value for a TextStyle fontWeight. */
+function weightValue(w: TextStyle['fontWeight'] | undefined): number {
+  if (w === undefined) return 400;
+  if (w === 'bold') return 700;
+  if (w === 'normal') return 400;
+  const n = parseInt(String(w), 10);
+  return Number.isFinite(n) ? n : 400;
+}
+
+/** Font file (= Android family name) for an effective weight. */
+export function familyFor(
+  weight: TextStyle['fontWeight'] | undefined,
+  heading = false,
+): string {
+  const w = weightValue(weight);
+  if (heading) {
+    if (w >= 800) return fonts.headingExtrabold;
+    if (w >= 700) return fonts.headingBold;
+    return fonts.headingSemibold;
+  }
+  if (w >= 800) return fonts.extrabold;
+  if (w >= 700) return fonts.bold;
+  if (w >= 600) return fonts.semibold;
+  return fonts.regular;
+}
 
 export const fontWeights = {
   thin: '100' as TextStyle['fontWeight'],
@@ -107,25 +143,25 @@ export const textVariants: Record<string, TextVariant> = {
     fontFamily: fonts.regular,
     fontSize: fontSizes.base,
     lineHeight: lineHeights.base,
-    fontWeight: fontWeights.medium,       // bumped: no 400 anywhere
+    fontWeight: fontWeights.semibold,     // 600 — small text reads solid app-wide
   },
   bodyBold: {
     fontFamily: fonts.regular,
     fontSize: fontSizes.base,
     lineHeight: lineHeights.base,
-    fontWeight: fontWeights.bold,         // bumped to true bold
+    fontWeight: fontWeights.bold,         // true bold
   },
   bodySmall: {
     fontFamily: fonts.regular,
     fontSize: fontSizes.sm,
     lineHeight: lineHeights.sm,
-    fontWeight: fontWeights.medium,       // bumped
+    fontWeight: fontWeights.semibold,     // 600 — checkout-style weight everywhere
   },
   caption: {
     fontFamily: fonts.regular,
     fontSize: fontSizes.xs,
     lineHeight: lineHeights.xs,
-    fontWeight: fontWeights.medium,       // bumped
+    fontWeight: fontWeights.bold,         // 700 — tiny text needs the most help
   },
   button: {
     fontFamily: fonts.regular,
@@ -138,7 +174,7 @@ export const textVariants: Record<string, TextVariant> = {
     fontFamily: fonts.regular,
     fontSize: fontSizes.sm,
     lineHeight: lineHeights.sm,
-    fontWeight: fontWeights.semibold,     // 600 per spec
+    fontWeight: fontWeights.bold,         // 700 — section labels anchor their cards
   },
 };
 

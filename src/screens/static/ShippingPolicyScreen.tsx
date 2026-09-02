@@ -25,8 +25,9 @@ export const ShippingPolicyScreen: React.FC = () => (
       {
         heading: '3. Shipping Charges',
         bullets: [
-          'Free delivery on orders of \u20b91,000 or more (before taxes).',
-          'For orders below \u20b91,000, a flat shipping fee is calculated at checkout based on weight and destination.',
+          'Free delivery on orders of \u20b91,000 or more (before taxes) for nearby locations.',
+          'For far-away delivery locations, a higher order value may be required to qualify for free delivery.',
+          'Orders that do not qualify for free delivery are charged a distance-based shipping fee at checkout.',
           'Exact shipping cost is always shown before you complete payment.',
         ],
       },

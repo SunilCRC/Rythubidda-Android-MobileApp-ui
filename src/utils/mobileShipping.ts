@@ -20,7 +20,7 @@
  */
 
 import { SHIPPING_CONFIG } from '../constants/shipping';
-import type { DeliveryCenter } from '../types';
+import type { DeliveryCenter, ShippingBand } from '../types';
 
 export interface ShippingResult {
   /** True when the customer is inside the nearest store's radius. */
@@ -91,6 +91,7 @@ export function calculateShippingMobile(
   centers?: DeliveryCenter[],
   globalPerKmRate?: number,
   freeAboveCartAmount?: number,
+  bands?: ShippingBand[],
 ): ShippingResult {
   // Resolve the candidate list. If none provided, use the hardcoded
   // fallback so the app still works before the splash fetch completes.
@@ -139,14 +140,35 @@ export function calculateShippingMobile(
     };
   }
 
-  // Free shipping?
-  const threshold = freeAboveCartAmount ?? SHIPPING_CONFIG.freeAboveCartAmount;
-  if (threshold > 0 && subtotal >= threshold) {
+  // Free-shipping policy. Distance-banded when the admin has bands
+  // configured (mirrors the backend ShippingCalculator: band matched on
+  // km, fee capped at the real per-km price); legacy single threshold
+  // otherwise. A distance BEYOND the last band gets NO free threshold —
+  // the admin's rules end at the last band's maxKm, so the full per-km
+  // fee applies (matches the backend's order-#386 fix). This is an
+  // ESTIMATE for display before the backend quote arrives — the server
+  // remains the charging authority.
+  const fullFee = Math.round(rate * minDistance);
+  let threshold: number | null =
+    freeAboveCartAmount ?? SHIPPING_CONFIG.freeAboveCartAmount;
+  let feeAboveThreshold = 0;
+
+  if (bands && bands.length > 0) {
+    let band = bands.find(b => minDistance >= b.minKm && minDistance < b.maxKm);
+    if (!band && minDistance < bands[0].minKm) {
+      band = bands[0];
+    }
+    threshold = band ? band.freeAboveAmount : null;
+    feeAboveThreshold = band ? (band.feeAboveThreshold ?? 0) : 0;
+  }
+
+  if (threshold != null && threshold > 0 && subtotal >= threshold) {
+    const charged = Math.min(Math.round(feeAboveThreshold), fullFee);
     return {
       applicable: true,
       distanceKm: minDistance,
-      cost: 0,
-      isFree: true,
+      cost: charged,
+      isFree: charged === 0,
       centerName: nearest.name,
       centerLat: nearest.latitude,
       centerLng: nearest.longitude,

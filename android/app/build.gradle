@@ -91,11 +91,11 @@ android {
         applicationId "com.rythubiddamobile"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        // Bumped for the first internal tester build. versionCode must
-        // increase with every install testers see; versionName is the
-        // human-readable label they'll quote in bug reports.
-        versionCode 21
-        versionName "1.0.0-dev.20"
+        // Play Store release. versionCode must STRICTLY INCREASE with
+        // every upload (Play rejects a re-used code); versionName is
+        // the label customers see on the store listing.
+        versionCode 28
+        versionName "1.0.2"
 
         // Inject GOOGLE_MAPS_API_KEY from .env (already loaded by dotenv.gradle
         // above) into the AndroidManifest as ${GOOGLE_MAPS_API_KEY}, so the
@@ -113,6 +113,26 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        // Play Store upload key. Credentials live OUTSIDE the repo in
+        // ~/.gradle/gradle.properties (never commit them):
+        //
+        //   RB_UPLOAD_STORE_FILE=C:/keys/rythubidda-release.keystore
+        //   RB_UPLOAD_STORE_PASSWORD=…
+        //   RB_UPLOAD_KEY_ALIAS=rythubidda
+        //   RB_UPLOAD_KEY_PASSWORD=…
+        //
+        // Until those exist the release build falls back to the debug
+        // key (see buildTypes.release) so local release builds still
+        // work — but Play REJECTS debug-signed uploads, so the real
+        // keystore is mandatory before publishing.
+        release {
+            if (project.hasProperty('RB_UPLOAD_STORE_FILE')) {
+                storeFile file(RB_UPLOAD_STORE_FILE)
+                storePassword RB_UPLOAD_STORE_PASSWORD
+                keyAlias RB_UPLOAD_KEY_ALIAS
+                keyPassword RB_UPLOAD_KEY_PASSWORD
+            }
+        }
     }
     buildTypes {
         debug {
@@ -124,13 +144,22 @@ android {
             manifestPlaceholders = [usesCleartextTraffic: "true"]
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            // Real upload key when configured, debug key otherwise —
+            // a Play upload MUST use the real one.
+            signingConfig project.hasProperty('RB_UPLOAD_STORE_FILE')
+                    ? signingConfigs.release
+                    : signingConfigs.debug
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
             // Production talks HTTPS only.
             manifestPlaceholders = [usesCleartextTraffic: "false"]
+            // ARM only: the prebuilt x86_64 libconceal.so (Fresco) is
+            // 4KB-aligned and fails Play's 16KB page-size check, which
+            // hard-blocks production uploads. Real devices are all ARM;
+            // debug builds keep x86_64 for the emulator.
+            ndk {
+                abiFilters "armeabi-v7a", "arm64-v8a"
+            }
         }
     }
 }
@@ -138,6 +167,12 @@ android {
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
+
+    // Animated GIF support for React Native's standard <Image> —
+    // without this, GIFs (the brand-logo in the home header) render
+    // as a frozen first frame. Version must match RN's Fresco
+    // (node_modules/react-native/gradle/libs.versions.toml).
+    implementation("com.facebook.fresco:animated-gif:3.6.0")
 
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")
