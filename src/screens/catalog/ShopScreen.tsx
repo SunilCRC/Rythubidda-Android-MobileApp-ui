@@ -3,6 +3,7 @@ import { FlatList, Pressable, ScrollView, StyleSheet, View } from 'react-native'
 import Icon from 'react-native-vector-icons/Feather';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigation } from '@react-navigation/native';
+import FastImage from 'react-native-fast-image';
 import { catalogService } from '../../api/services';
 import { EmptyState, Skeleton, Text } from '../../components/common';
 import { Container } from '../../components/layout/Container';
@@ -12,11 +13,17 @@ import { FloatingCartPill } from '../../components/home/FloatingCartPill';
 import { colors } from '../../theme/colors';
 import { radius, shadows, spacing } from '../../theme/spacing';
 import { toArray } from '../../utils/format';
-import { hasProductImage } from '../../utils/image';
+import { hasProductImage, isValidImageUrl, resolveImageUrl } from '../../utils/image';
 import { iconForCategory, titleCaseCategory } from '../../utils/categoryIcon';
+import { buildCategoryTree } from '../../utils/categoryTree';
+import { SubcategoryChips } from '../../components/SubcategoryChips';
 import type { Category, Product } from '../../types';
 
-type SortKey = 'popular' | 'priceAsc' | 'new';
+type SortKey = 'popular' | 'priceAsc' | 'priceDesc' | 'discount' | 'new';
+
+// Discount % of a product for the "Discount" sort (0 when no MRP).
+const discountPct = (p: Product): number =>
+  p.mrp && p.price && p.mrp > p.price ? (p.mrp - p.price) / p.mrp : 0;
 
 /**
  * SHOP tab (user feedback): aisle browsing in one screen — category
@@ -27,6 +34,8 @@ type SortKey = 'popular' | 'priceAsc' | 'new';
 export const ShopScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const [activeId, setActiveId] = useState<number | null>(null);
+  // Selected sub-category chip inside the active aisle (null = All).
+  const [activeChildId, setActiveChildId] = useState<number | null>(null);
   const [sort, setSort] = useState<SortKey>('popular');
   const [sheetProductId, setSheetProductId] = useState<number | null>(null);
 
@@ -36,13 +45,17 @@ export const ShopScreen: React.FC = () => {
     staleTime: 10 * 60 * 1000,
   });
 
+  // Rail = active parent categories only (same as the website's
+  // sidebar); their children become chips in the products pane.
   const rail = useMemo(
-    () =>
-      toArray<Category>(categoriesQ.data).filter(
-        c => c.name.trim().toLowerCase() !== 'all products' && c.name.trim().toLowerCase() !== 'all',
-      ),
+    () => buildCategoryTree(toArray<Category>(categoriesQ.data)),
     [categoriesQ.data],
   );
+  const activeChildren = useMemo(
+    () => rail.find(r => Number(r.id ?? r.categoryId) === activeId)?.children ?? [],
+    [rail, activeId],
+  );
+  const queryCategoryId = activeChildId ?? activeId;
 
   // First aisle auto-selects once categories arrive.
   useEffect(() => {
@@ -58,15 +71,21 @@ export const ShopScreen: React.FC = () => {
   }, [rail, activeId]);
 
   const productsQ = useQuery({
-    queryKey: ['productsByCategory', activeId],
-    queryFn: () => catalogService.getProductsByCategory(activeId!),
-    enabled: activeId != null,
+    queryKey: ['productsByCategory', queryCategoryId],
+    queryFn: () => catalogService.getProductsByCategory(queryCategoryId!),
+    enabled: queryCategoryId != null,
   });
 
   const products = useMemo(() => {
     const list = toArray<Product>(productsQ.data).filter(hasProductImage);
     if (sort === 'priceAsc') {
       return [...list].sort((a, b) => (a.price ?? 0) - (b.price ?? 0));
+    }
+    if (sort === 'priceDesc') {
+      return [...list].sort((a, b) => (b.price ?? 0) - (a.price ?? 0));
+    }
+    if (sort === 'discount') {
+      return [...list].sort((a, b) => discountPct(b) - discountPct(a));
     }
     if (sort === 'new') {
       return [...list].sort(
@@ -122,6 +141,7 @@ export const ShopScreen: React.FC = () => {
                   onPress={() => {
                     if (id && id !== activeId) {
                       setActiveId(id);
+                      setActiveChildId(null);
                       setSort('popular');
                     }
                   }}
@@ -131,7 +151,27 @@ export const ShopScreen: React.FC = () => {
                 >
                   {on ? <View style={styles.railSpine} /> : null}
                   <View style={[styles.railIm, on && styles.railImOn]}>
-                    <Text style={styles.railEmoji}>{iconForCategory(c.name)}</Text>
+
+                    {/* Category image from the admin, emoji fallback (same rule as the home bubbles). */}
+
+                    {isValidImageUrl(c.image) ? (
+
+                      <FastImage
+
+                        source={{ uri: resolveImageUrl(c.image) }}
+
+                        style={styles.railImg}
+
+                        resizeMode={FastImage.resizeMode.cover}
+
+                      />
+
+                    ) : (
+
+                      <Text style={styles.railEmoji}>{iconForCategory(c.name)}</Text>
+
+                    )}
+
                   </View>
                   <Text
                     variant="caption"
@@ -157,11 +197,21 @@ export const ShopScreen: React.FC = () => {
           <Text variant="caption" weight="700" color={colors.textTertiary}>
             {loadingProducts ? 'Loading…' : `${products.length} product${products.length === 1 ? '' : 's'}`}
           </Text>
+          <SubcategoryChips
+            children={activeChildren}
+            selectedId={activeChildId}
+            onSelect={id => {
+              setActiveChildId(id);
+              setSort('popular');
+            }}
+          />
 
           <View style={styles.sortRow}>
             {([
               ['popular', 'Popular'],
-              ['priceAsc', 'Price ↓'],
+              ['priceAsc', 'Price: Low to High'],
+              ['priceDesc', 'Price: High to Low'],
+              ['discount', 'Discount'],
               ['new', 'New'],
             ] as Array<[SortKey, string]>).map(([key, label]) => {
               const on = sort === key;
@@ -290,12 +340,14 @@ const styles = StyleSheet.create({
     borderColor: colors.tintStrong,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
   railImOn: {
     borderColor: colors.primary,
     borderWidth: 1.5,
   },
   railEmoji: { fontSize: 20, includeFontPadding: false },
+  railImg: { width: '100%', height: '100%' },
   railLabel: { marginTop: 3, fontSize: 8.5, lineHeight: 10.5 },
   main: { flex: 1, paddingHorizontal: spacing.md, paddingTop: spacing.md },
   sortRow: { flexDirection: 'row', gap: 6, marginTop: spacing.sm, marginBottom: spacing.md },

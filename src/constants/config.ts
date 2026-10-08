@@ -63,7 +63,13 @@ export const APP_CONFIG = {
   SUPPORT_EMAIL: 'admin@RythuBidda.com',
   WEB_URL: 'https://rythubidda.com',
 
-  MIN_ORDER_FREE_SHIPPING: 1000,
+  // Mandatory-update control file (see components/ForceUpdateGate).
+  APP_VERSION_URL: (Config.APP_VERSION_URL ?? '').trim(),
+  // Android versionCode of THIS build - react-native-config mirrors every
+  // BuildConfig field, so no extra native module is needed.
+  VERSION_CODE: Number(Config.VERSION_CODE || 0),
+
+  MIN_ORDER_FREE_SHIPPING: 0, // no cart-value free shipping; bands decide
   MAX_CART_ITEM_QTY: 10,
   OTP_LENGTH: 6,
   OTP_RESEND_SECONDS: 30,

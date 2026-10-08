@@ -22,7 +22,7 @@ interface Props {
   height?: number;
   autoPlayIntervalMs?: number;
   /** "Shop now →" CTA on each slide (UX board) — hidden when omitted. */
-  onShopPress?: () => void;
+  onShopPress?: (slide: GalleryImage) => void;
   /**
    * Today's farmer — when present, a glass card overlays the right
    * side of the carousel (same treatment as the web hero) and the
@@ -130,7 +130,7 @@ export const HeroCarousel: React.FC<Props> = ({
                     ) : null}
                     {onShopPress ? (
                       <Pressable
-                        onPress={onShopPress}
+                        onPress={() => onShopPress(item)}
                         style={({ pressed }) => [styles.cta, pressed && { opacity: 0.85 }]}
                         accessibilityRole="button"
                         accessibilityLabel="Shop now"

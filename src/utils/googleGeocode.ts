@@ -355,7 +355,13 @@ export async function forwardGeocode(
   addressText: string,
 ): Promise<ReverseGeocodeResult> {
   const trimmed = addressText.trim();
-  if (trimmed.length < 8) {
+  // The 8-char floor guards against geocoding stray fragments of a full
+  // address string. A bare 6-digit Indian pincode is a legitimate query
+  // (the manual "Check" button on the location picker passes exactly
+  // that) and must be allowed through — otherwise it was rejected before
+  // Google was ever called, so "500072" always failed.
+  const isPincode = /^\d{6}$/.test(trimmed);
+  if (trimmed.length < 8 && !isPincode) {
     return { ok: false, error: 'no_result' };
   }
 

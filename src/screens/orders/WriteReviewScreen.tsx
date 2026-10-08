@@ -124,7 +124,7 @@ export const WriteReviewScreen: React.FC<Props> = ({ route, navigation }) => {
     try {
       await orderService.submitReviews(Number(orderId), payload);
       haptics.success();
-      showToast.success('Thanks for your review!');
+      showToast.success('Thanks for your review!', 'It will show on the product once our team approves it.');
 
       // Clear the just-submitted drafts and refetch — the backend will
       // now return those items with `productReview` populated, which the

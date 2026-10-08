@@ -111,7 +111,12 @@ export function normalizeProduct(raw: any): Product {
   const unit =
     firstOption?.name ?? firstOption?.label ?? raw.unit ?? undefined;
 
-  const reviewsRaw: any[] = Array.isArray(raw.reviews) ? raw.reviews : [];
+  // The shop API sends the approved reviews as `productReviews`; `reviews`
+  // is kept for older payloads. Reading only `reviews` left the list empty
+  // while the average/count (separate fields) still showed.
+  const reviewsRaw: any[] = Array.isArray(raw.productReviews)
+    ? raw.productReviews
+    : Array.isArray(raw.reviews) ? raw.reviews : [];
   const reviews: ProductReview[] = reviewsRaw.map(r => ({
     id: r.id ?? r.reviewId,
     reviewId: r.reviewId ?? r.id,
@@ -227,6 +232,7 @@ export function normalizeGalleryImage(raw: any): GalleryImage {
     orientation: raw.orientation,
     position: raw.position,
     linkTo: raw.linkTo,
+    linkCategoryId: raw.linkCategoryId ?? null,
   };
 }
 

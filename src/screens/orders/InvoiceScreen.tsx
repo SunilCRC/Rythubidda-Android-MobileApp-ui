@@ -66,6 +66,7 @@ export const InvoiceScreen: React.FC<Props> = ({ route, navigation }) => {
   }, [fetchedItems, invoice, order]);
 
   const ship = invoice?.shippingAddress ?? order?.shippingAddress ?? order?.address;
+  const store = invoice?.store;
   const customerName =
     invoice?.customer?.firstname ??
     invoice?.customer?.firstName ??
@@ -86,6 +87,9 @@ export const InvoiceScreen: React.FC<Props> = ({ route, navigation }) => {
   const dspSubTotal = order?.dspSubTotal;
   const dspShipping = order?.dspShippingAmount;
   const dspTotal = order?.dspGrandTotal;
+  // Coupon / first-order discount the order was placed with (0 when none).
+  const discountAmount = Number(order?.discountAmount) || 0;
+  const discountCode = (order?.discountCode || '').toString().trim();
 
   const invoiceNumber =
     invoice?.invoiceNumber ?? order?.incrementId ?? order?.entityId ?? orderId;
@@ -130,6 +134,7 @@ export const InvoiceScreen: React.FC<Props> = ({ route, navigation }) => {
       const result = await generateInvoicePdf({
         invoiceNumber,
         invoiceDate,
+        paymentMethod,
         order,
         items,
       });
@@ -234,6 +239,16 @@ export const InvoiceScreen: React.FC<Props> = ({ route, navigation }) => {
             </View>
           ) : null}
 
+          {/* Delivering store: address only (owner's call). */}
+          {store?.address ? (
+            <View style={{ marginTop: spacing.base }}>
+              <Text variant="label" color={colors.textSecondary}>
+                Delivered from
+              </Text>
+              <Text variant="bodySmall">{store.address}</Text>
+            </View>
+          ) : null}
+
           {ship ? (
             <View style={{ marginTop: spacing.base }}>
               <Text variant="label" color={colors.textSecondary}>
@@ -305,6 +320,12 @@ export const InvoiceScreen: React.FC<Props> = ({ route, navigation }) => {
                 : formatINR(0)
             }
           />
+          {discountAmount > 0 ? (
+            <Row
+              label={discountCode ? `Coupon discount (${discountCode})` : 'Discount'}
+              value={`- ${formatINR(discountAmount)}`}
+            />
+          ) : null}
           {tax ? <Row label="Tax" value={formatINR(tax)} /> : null}
           <Divider spacing_={spacing.xs} />
           <Row

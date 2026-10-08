@@ -46,6 +46,7 @@ export type ProfileStackParamList = {
   Addresses: { selectMode?: boolean } | undefined;
   AddEditAddress: { addressId?: number } | undefined;
   About: undefined;
+  MyCoupons: undefined;
   Contact: undefined;
   Terms: undefined;
   Privacy: undefined;

@@ -109,16 +109,29 @@ export function calculateShippingMobile(
           },
         ];
 
-  // Find the nearest center.
-  let nearest = usable[0];
-  let minDistance = Infinity;
+  // The store that SERVES the customer: the nearest store whose radius
+  // covers the point. A closer store with a radius that is too small does
+  // not block a farther store that does cover the customer (owner rule,
+  // 2026-10-07; same as the server). With no covering store we fall back
+  // to the nearest overall so the "X km from <store>" message still makes
+  // sense — its radius check below then reports out of range.
+  let serving: DeliveryCenter | null = null;
+  let servingDistance = Infinity;
+  let nearestOverall = usable[0];
+  let nearestDistance = Infinity;
   for (const c of usable) {
     const d = haversineKm(c.latitude, c.longitude, customerLat, customerLng);
-    if (d < minDistance) {
-      minDistance = d;
-      nearest = c;
+    if (d < nearestDistance) {
+      nearestDistance = d;
+      nearestOverall = c;
+    }
+    if (d <= c.maxRadiusKm && d < servingDistance) {
+      servingDistance = d;
+      serving = c;
     }
   }
+  const nearest = serving ?? nearestOverall;
+  const minDistance = serving ? servingDistance : nearestDistance;
 
   // Per-store rate beats global rate beats the hardcoded constant.
   const rate =
@@ -126,7 +139,7 @@ export function calculateShippingMobile(
       ? nearest.perKmRate
       : globalPerKmRate ?? SHIPPING_CONFIG.perKmRate;
 
-  // Out of range: customer is farther than the NEAREST store's radius.
+  // Out of range: no active store's radius covers the customer.
   if (minDistance > nearest.maxRadiusKm) {
     return {
       applicable: false,
@@ -149,8 +162,10 @@ export function calculateShippingMobile(
   // ESTIMATE for display before the backend quote arrives — the server
   // remains the charging authority.
   const fullFee = Math.round(rate * minDistance);
-  let threshold: number | null =
-    freeAboveCartAmount ?? SHIPPING_CONFIG.freeAboveCartAmount;
+  // Free shipping ONLY from admin distance bands — no global cart-value
+  // fallback (matches the server; the old "free above ₹1000" is gone).
+  let threshold: number | null = null;
+  void freeAboveCartAmount; // kept in the signature for callers; intentionally unused
   let feeAboveThreshold = 0;
 
   if (bands && bands.length > 0) {

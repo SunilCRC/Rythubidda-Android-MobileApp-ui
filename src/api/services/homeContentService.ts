@@ -26,12 +26,30 @@ export const homeContentService = {
    * customer when the JWT is attached, which the client does
    * automatically once logged in).
    */
+  /** Every live deal in admin position order (the server hides ones this customer used). */
+  getLiveDeals: async (): Promise<TodaysDeal[]> => {
+    const raw = await apiGet<any>(ENDPOINTS.TODAYS_DEALS_LIVE);
+    const list: any[] = raw && typeof raw === 'object' && Array.isArray(raw.deals)
+      ? raw.deals
+      : Array.isArray(raw) ? raw : [];
+    return list
+      .filter(d => d && typeof d === 'object' && d.productId)
+      .map(deal => ({
+        ...deal,
+        fetchedAtMs: Date.now(),
+        variants: Array.isArray(deal.variants) ? deal.variants : [],
+        maxQtyPerCustomer: deal.maxQtyPerCustomer ?? 1,
+        remainingSeconds: deal.remainingSeconds ?? 0,
+      }) as TodaysDeal);
+  },
+
   getCurrentDeal: async (): Promise<TodaysDeal | null> => {
     const raw = await apiGet<any>(ENDPOINTS.TODAYS_DEAL_CURRENT);
     const deal = raw && typeof raw === 'object' && 'deal' in raw ? raw.deal : raw;
     if (!deal || typeof deal !== 'object' || !deal.productId) return null;
     return {
       ...deal,
+      fetchedAtMs: Date.now(),
       variants: Array.isArray(deal.variants) ? deal.variants : [],
       maxQtyPerCustomer: deal.maxQtyPerCustomer ?? 1,
       remainingSeconds: deal.remainingSeconds ?? 0,

@@ -9,6 +9,7 @@ import Icon from 'react-native-vector-icons/Feather';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import RazorpayCheckout from 'react-native-razorpay';
+import { openCashfreeCheckout } from '../../utils/cashfreePay';
 import {
   Button,
   Card,
@@ -19,6 +20,7 @@ import {
 } from '../../components/common';
 import { Container } from '../../components/layout/Container';
 import { ScreenHeader } from '../../components/layout/ScreenHeader';
+import { CouponBox } from '../../components/checkout/CouponBox';
 import { colors } from '../../theme/colors';
 import { radius, spacing } from '../../theme/spacing';
 import {
@@ -27,6 +29,7 @@ import {
   homeContentService,
   paymentService,
 } from '../../api/services';
+import type { OnlineMethod } from '../../api/services/paymentService';
 import { forwardGeocode } from '../../utils/googleGeocode';
 import { calculateShippingMobile } from '../../utils/mobileShipping';
 import { formatKm } from '../../utils/format';
@@ -68,6 +71,16 @@ export const CheckoutScreen: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [payMethod, setPayMethod] = useState<PayOption>('RAZORPAY');
+  // Which online method the customer picked (tester: one combined "Pay
+  // online" row gave no way to choose Card). The gateway opens on it.
+  const [onlineMethod, setOnlineMethod] = useState<OnlineMethod>('upi');
+  // Cash on Delivery is offered only where the server allows it (dev/testing).
+  const [codEnabled, setCodEnabled] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    paymentService.getGateway().then(g => { if (alive) setCodEnabled(g.codEnabled); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
 
   // React Query client — used to invalidate the orders cache after a
   // successful order so OrdersScreen re-fetches and the user's new
@@ -338,7 +351,12 @@ export const CheckoutScreen: React.FC = () => {
   const discountAmount = firstOrder.data?.eligible
     ? Math.round(subtotal * discountPct) / 100
     : 0;
-  const total = subtotal - discountAmount + effectiveShipping;
+  // Customer coupon — attached and priced by the server (cart.discountCode
+  // is the coupon code, or 'FIRST10' on a first order; never both).
+  const couponCode =
+    cart.discountCode && cart.discountCode !== 'FIRST10' ? cart.discountCode : null;
+  const couponAmount = couponCode ? cart.discountAmount ?? 0 : 0;
+  const total = subtotal - discountAmount - couponAmount + effectiveShipping;
 
   const startPayment = async () => {
     if (!addressId) {
@@ -390,6 +408,40 @@ export const CheckoutScreen: React.FC = () => {
         // not the previous order's success screen.
         navigation.reset({ index: 0, routes: [{ name: 'OrderSuccess', params: { orderId: cart.cartId } }] });
         showToast.success('Order placed!');
+        return;
+      }
+
+      // Online payment: the server says which gateway is live (config switch).
+      const gw = await paymentService.getGateway();
+      if (gw.gateway === 'CASHFREE') {
+        const cf = await paymentService.createCashfreeOrder(cart.cartId!, onlineMethod);
+        if (cf.error || !cf.payment_session_id || !cf.order_id) {
+          showToast.error('Payment could not start', cf.error || 'Please try again.');
+          return;
+        }
+        const sdk = await openCashfreeCheckout({
+          paymentSessionId: cf.payment_session_id,
+          orderId: cf.order_id,
+          mode: cf.mode === 'production' ? 'production' : 'sandbox',
+        });
+        // Whatever the SDK reported, our server has the final word.
+        const verify = await paymentService.verifyCashfree(cf.order_id, cart.cartId!);
+        if (verify.status === 'success') {
+          await clear();
+          await refresh();
+          await queryClient.invalidateQueries({ queryKey: ['orders'] });
+          navigation.reset({ index: 0, routes: [{ name: 'OrderSuccess', params: { orderId: cart.cartId } }] });
+          showToast.success('Payment successful');
+        } else if (verify.status === 'pending' && sdk.outcome === 'returned') {
+          showToast.info('Payment processing', verify.message || 'Check My Orders in a minute.');
+        } else {
+          await paymentService.cancelCashfree(cf.order_id);
+          if (sdk.outcome === 'error' && !sdk.cancelled) {
+            showToast.error('Payment failed', sdk.message);
+          } else {
+            showToast.info('Payment cancelled');
+          }
+        }
         return;
       }
 
@@ -542,20 +594,37 @@ export const CheckoutScreen: React.FC = () => {
         <Text variant="label" weight="800" color={colors.textPrimary} style={styles.sectionLabel}>
           Payment Method
         </Text>
-        <PaymentOption
-          label="Pay online (UPI / Card / Wallet)"
-          subtitle="Secure payment via Razorpay"
-          icon="credit-card"
-          selected={payMethod === 'RAZORPAY'}
-          onPress={() => setPayMethod('RAZORPAY')}
-        />
-        <PaymentOption
-          label="Pay on delivery"
-          subtitle="Pay when you receive the order"
-          icon="truck"
-          selected={payMethod === 'PAY_AFTER_DELIVERY'}
-          onPress={() => setPayMethod('PAY_AFTER_DELIVERY')}
-        />
+        {(
+          [
+            { key: 'upi', label: 'UPI / QR Code', subtitle: 'GPay, PhonePe, Paytm & more', icon: 'smartphone' },
+            { key: 'card', label: 'Credit / Debit / ATM Cards', subtitle: 'Visa, Mastercard, RuPay', icon: 'credit-card' },
+            { key: 'netbanking', label: 'Net Banking', subtitle: 'All major banks', icon: 'globe' },
+            { key: 'wallet', label: 'Wallets', subtitle: 'Paytm, PhonePe, Amazon Pay & more', icon: 'briefcase' },
+          ] as { key: OnlineMethod; label: string; subtitle: string; icon: string }[]
+        ).map(o => (
+          <PaymentOption
+            key={o.key}
+            label={o.label}
+            subtitle={o.subtitle}
+            icon={o.icon}
+            selected={payMethod === 'RAZORPAY' && onlineMethod === o.key}
+            onPress={() => {
+              setPayMethod('RAZORPAY');
+              setOnlineMethod(o.key);
+            }}
+          />
+        ))}
+        {codEnabled ? (
+          <PaymentOption
+            label="Pay on delivery"
+            subtitle="Pay when you receive the order"
+            icon="truck"
+            selected={payMethod === 'PAY_AFTER_DELIVERY'}
+            onPress={() => setPayMethod('PAY_AFTER_DELIVERY')}
+          />
+        ) : null}
+
+        <CouponBox cartId={cart.cartId} appliedCode={couponCode} onChanged={refresh} />
 
         {/* Summary */}
         <Text variant="label" weight="800" color={colors.textPrimary} style={styles.sectionLabel}>
@@ -584,6 +653,12 @@ export const CheckoutScreen: React.FC = () => {
             <SummaryRow
               label={`🎁 First-order discount (${firstOrder.data?.code ?? 'FIRST10'})`}
               value={`− ${formatINR(discountAmount)}`}
+            />
+          ) : null}
+          {couponAmount > 0 ? (
+            <SummaryRow
+              label={`Coupon (${couponCode})`}
+              value={`− ${formatINR(couponAmount)}`}
             />
           ) : null}
           {/* Delivery row — clean Zepto / Swiggy / Blinkit pattern.

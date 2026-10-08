@@ -94,8 +94,8 @@ android {
         // Play Store release. versionCode must STRICTLY INCREASE with
         // every upload (Play rejects a re-used code); versionName is
         // the label customers see on the store listing.
-        versionCode 28
-        versionName "1.0.2"
+        versionCode 33
+        versionName "1.0.7"
 
         // Inject GOOGLE_MAPS_API_KEY from .env (already loaded by dotenv.gradle
         // above) into the AndroidManifest as ${GOOGLE_MAPS_API_KEY}, so the

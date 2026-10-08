@@ -85,6 +85,13 @@ export const ProfileScreen: React.FC = () => {
           tint: colors.accent,
           tintBg: '#FFE6D6',
         },
+        {
+          icon: 'tag',
+          label: 'My Coupons',
+          screen: 'MyCoupons',
+          tint: colors.success,
+          tintBg: colors.successSoft,
+        },
       ],
     },
     {

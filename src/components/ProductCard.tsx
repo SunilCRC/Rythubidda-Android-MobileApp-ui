@@ -19,6 +19,7 @@ import { useRequireAuth } from '../hooks/useRequireAuth';
 import { showToast } from '../utils/toast';
 import { haptics } from '../utils/haptics';
 import { APP_CONFIG } from '../constants/config';
+import { useDealLimits } from '../hooks/useDealLimits';
 import type { Product, ProductQtyOption } from '../types';
 
 interface Props {
@@ -52,6 +53,7 @@ export const ProductCard: React.FC<Props> = ({
   const addItem = useCartStore(s => s.addItem);
   const updateQty = useCartStore(s => s.updateQty);
   const removeItem = useCartStore(s => s.removeItem);
+  const { maxQtyFor } = useDealLimits();
   const requireAuth = useRequireAuth();
 
   // Sort qty options and derive a default selection.
@@ -125,7 +127,7 @@ export const ProductCard: React.FC<Props> = ({
     const itemId = (cartLine.itemId ?? cartLine.cartItemId)!;
     try {
       setBusy(true);
-      await updateQty(itemId, Math.min(APP_CONFIG.MAX_CART_ITEM_QTY, cartQty + 1));
+      await updateQty(itemId, Math.min(maxQtyFor(cartLine.qtyOptionId), cartQty + 1));
     } catch (err: any) {
       showToast.error('Could not update', err?.message);
     } finally {
@@ -208,7 +210,7 @@ export const ProductCard: React.FC<Props> = ({
                   onDecrement={handleDecrement}
                   loading={busy}
                   min={0}
-                  max={APP_CONFIG.MAX_CART_ITEM_QTY}
+                  max={maxQtyFor(cartLine?.qtyOptionId)}
                   size="sm"
                   tone="primary"
                 />
@@ -298,7 +300,9 @@ export const ProductCard: React.FC<Props> = ({
               Text is FULLY black + bold so it reads at a glance, and the
               border + bg are tinted with brand cream so the dropdown
               feels like an active control, not faded grey chrome. */}
-          {!compact && options.length > 1 ? (
+          {/* Shown on compact grid cards too (category / Shop tab) — the
+              tester could not pick 2 kg without opening the product. */}
+          {options.length > 1 ? (
             <Pressable
               onPress={e => {
                 e.stopPropagation?.();

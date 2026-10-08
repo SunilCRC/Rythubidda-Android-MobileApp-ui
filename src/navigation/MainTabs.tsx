@@ -31,6 +31,7 @@ import { ShopScreen } from '../screens/catalog/ShopScreen';
 import { CartScreen } from '../screens/cart/CartScreen';
 import { CheckoutScreen } from '../screens/cart/CheckoutScreen';
 import { AddressesScreen } from '../screens/profile/AddressesScreen';
+import { MyCouponsScreen } from '../screens/profile/MyCouponsScreen';
 import { AddEditAddressScreen } from '../screens/profile/AddEditAddressScreen';
 import { OrderSuccessScreen } from '../screens/cart/OrderSuccessScreen';
 import { OrdersScreen } from '../screens/orders/OrdersScreen';
@@ -107,6 +108,7 @@ const ProfileStackScreen = () => (
     <ProfileNav.Screen name="CloseAccount" component={CloseAccountScreen} />
     <ProfileNav.Screen name="Addresses" component={AddressesScreen} />
     <ProfileNav.Screen name="AddEditAddress" component={AddEditAddressScreen} />
+    <ProfileNav.Screen name="MyCoupons" component={MyCouponsScreen} />
     <ProfileNav.Screen name="About" component={AboutScreen} />
     <ProfileNav.Screen name="Contact" component={ContactScreen} />
     <ProfileNav.Screen name="Terms" component={TermsScreen} />

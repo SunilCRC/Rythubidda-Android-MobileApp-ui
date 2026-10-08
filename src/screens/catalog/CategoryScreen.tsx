@@ -14,12 +14,18 @@ import { radius, shadows, spacing } from '../../theme/spacing';
 import { toArray } from '../../utils/format';
 import { hasProductImage } from '../../utils/image';
 import { titleCaseCategory } from '../../utils/categoryIcon';
+import { childrenOf } from '../../utils/categoryTree';
+import { SubcategoryChips } from '../../components/SubcategoryChips';
 import type { HomeStackParamList } from '../../navigation/types';
-import type { Product } from '../../types';
+import type { Category, Product } from '../../types';
 
 type Props = NativeStackScreenProps<HomeStackParamList, 'Category'>;
 
-type SortKey = 'popular' | 'priceAsc' | 'new';
+type SortKey = 'popular' | 'priceAsc' | 'priceDesc' | 'discount' | 'new';
+
+// Discount % of a product for the "Discount" sort (0 when no MRP).
+const discountPct = (p: Product): number =>
+  p.mrp && p.price && p.mrp > p.price ? (p.mrp - p.price) / p.mrp : 0;
 
 /**
  * v3 category browser (per feedback: no side rail — full-width):
@@ -30,17 +36,37 @@ type SortKey = 'popular' | 'priceAsc' | 'new';
 export const CategoryScreen: React.FC<Props> = ({ route, navigation }) => {
   const { categoryId, name } = route.params;
   const [sort, setSort] = useState<SortKey>('popular');
+  // Sub-category chips (website: expandable rows under a parent).
+  // null = "All" → the parent id, which the backend answers with the
+  // union of the parent's own + children's products.
+  const [childId, setChildId] = useState<number | null>(null);
+  const categoriesQ = useQuery({
+    queryKey: ['categories'],
+    queryFn: catalogService.getCategories,
+    staleTime: 10 * 60 * 1000,
+  });
+  const children = useMemo(
+    () => childrenOf(toArray<Category>(categoriesQ.data), Number(categoryId)),
+    [categoriesQ.data, categoryId],
+  );
+  const queryCategoryId = childId ?? categoryId;
   const [sheetProductId, setSheetProductId] = useState<number | null>(null);
 
   const { data, isLoading, refetch, isFetching } = useQuery({
-    queryKey: ['productsByCategory', categoryId],
-    queryFn: () => catalogService.getProductsByCategory(categoryId),
+    queryKey: ['productsByCategory', queryCategoryId],
+    queryFn: () => catalogService.getProductsByCategory(queryCategoryId),
   });
 
   const products = useMemo(() => {
     const list = toArray<Product>(data).filter(hasProductImage);
     if (sort === 'priceAsc') {
       return [...list].sort((a, b) => (a.price ?? 0) - (b.price ?? 0));
+    }
+    if (sort === 'priceDesc') {
+      return [...list].sort((a, b) => (b.price ?? 0) - (a.price ?? 0));
+    }
+    if (sort === 'discount') {
+      return [...list].sort((a, b) => discountPct(b) - discountPct(a));
     }
     if (sort === 'new') {
       return [...list].sort(
@@ -77,11 +103,21 @@ export const CategoryScreen: React.FC<Props> = ({ route, navigation }) => {
         <Text variant="caption" weight="700" color={colors.textTertiary}>
           {isLoading ? 'Loading…' : `${products.length} products`}
         </Text>
+        <SubcategoryChips
+          children={children}
+          selectedId={childId}
+          onSelect={id => {
+            setChildId(id);
+            setSort('popular');
+          }}
+        />
 
         <View style={styles.sortRow}>
           {([
             ['popular', 'Popular'],
-            ['priceAsc', 'Price ↓'],
+            ['priceAsc', 'Price: Low to High'],
+            ['priceDesc', 'Price: High to Low'],
+            ['discount', 'Discount'],
             ['new', 'New'],
           ] as Array<[SortKey, string]>).map(([key, label]) => {
             const on = sort === key;

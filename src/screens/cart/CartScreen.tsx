@@ -28,11 +28,13 @@ import { pickFirstImage } from '../../utils/image';
 import { formatINR, toArray } from '../../utils/format';
 import { showToast } from '../../utils/toast';
 import type { ShoppingItem } from '../../types';
+import { useDealLimits } from '../../hooks/useDealLimits';
 
 export const CartScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const isAuth = useIsAuthenticated();
   const { cart, loading, refresh, updateQty, removeItem } = useCartStore();
+  const { maxQtyFor } = useDealLimits();
 
   useEffect(() => {
     if (isAuth) refresh();
@@ -66,9 +68,8 @@ export const CartScreen: React.FC = () => {
   // (where the customer's selected address gives us the lat/lng to
   // compute distance). The cart screen stays focused on items + subtotal.
 
-  // Same minimum-order rule as the web cart (Cart.tsx): checkout opens
-  // only from ₹101 — the "Add ₹X more" note below mirrors its wording.
-  const MIN_ORDER = 101;
+  // Minimum items subtotal to place an order (owner rule, 2026-09-30).
+  const MIN_ORDER = 100;
   const belowMinOrder = subtotal < MIN_ORDER;
 
   const handleCheckout = () => {
@@ -79,8 +80,13 @@ export const CartScreen: React.FC = () => {
   const handleQtyChange = async (item: ShoppingItem, delta: number) => {
     const id = item.itemId ?? item.cartItemId;
     if (!id) return;
-    const newQty = Math.max(1, Math.min(10, item.qty + delta));
-    if (newQty === item.qty) return;
+    // Deal lines follow the deal's "max per customer"; everything else 10.
+    const cap = maxQtyFor(item.qtyOptionId);
+    const newQty = Math.max(1, Math.min(cap, item.qty + delta));
+    if (newQty === item.qty) {
+      if (delta > 0) showToast.info(`Maximum quantity of ${cap} reached for this item`);
+      return;
+    }
     try {
       await updateQty(id, newQty);
     } catch (e: any) {
@@ -165,7 +171,7 @@ export const CartScreen: React.FC = () => {
               <View style={styles.minOrderNote}>
                 <Icon name="alert-circle" size={14} color={colors.warning} />
                 <Text variant="caption" color={colors.textPrimary} style={{ flex: 1 }}>
-                  Add {formatINR(MIN_ORDER - subtotal)} more to place your order
+                  Minimum order value is {formatINR(MIN_ORDER)}. Add {formatINR(MIN_ORDER - subtotal)} more to place your order
                 </Text>
               </View>
             )}

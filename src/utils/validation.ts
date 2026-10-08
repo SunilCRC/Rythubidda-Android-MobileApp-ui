@@ -33,9 +33,14 @@ export const loginSchema = z.object({
   password: z.string().min(1, 'Password is required'),
 });
 
+// A person's name: letters in any script, spaces, dots, apostrophes,
+// hyphens. Digits and symbols like " @ # $ % & * are rejected.
+const NAME_RE = /^\p{L}[\p{L} .'-]*$/u;
+const NAME_MSG = 'Use letters only (spaces, dots, apostrophes and hyphens are fine)';
+
 export const signupSchema = z.object({
-  firstName: z.string().trim().min(2, 'First name is too short').max(40),
-  lastName: z.string().trim().min(1, 'Last name is required').max(40),
+  firstName: z.string().trim().min(2, 'First name is too short').max(40).regex(NAME_RE, NAME_MSG),
+  lastName: z.string().trim().min(1, 'Last name is required').max(40).regex(NAME_RE, NAME_MSG),
   phone: phoneSchema,
   password: passwordSchema,
 });
@@ -82,8 +87,8 @@ export const addressSchema = z.object({
 });
 
 export const profileSchema = z.object({
-  firstName: z.string().trim().min(2, 'First name is too short'),
-  lastName: z.string().trim().min(1, 'Last name is required'),
+  firstName: z.string().trim().min(2, 'First name is too short').max(40).regex(NAME_RE, NAME_MSG),
+  lastName: z.string().trim().min(1, 'Last name is required').max(40).regex(NAME_RE, NAME_MSG),
 });
 
 export const reviewSchema = z.object({

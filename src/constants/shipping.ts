@@ -28,5 +28,5 @@ export const SHIPPING_CONFIG = {
    * Free shipping above this cart subtotal in ₹. Set to 0 to disable
    * (then shipping is always charged regardless of cart size).
    */
-  freeAboveCartAmount: 1000,
+  freeAboveCartAmount: 0,
 };

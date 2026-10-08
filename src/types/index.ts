@@ -206,6 +206,10 @@ export interface ShoppingCart {
   customerId?: number;
   items?: ShoppingItem[];
   subtotal?: number;
+  /** Discount the backend applied (FIRST10 or a customer coupon); 0 when none. */
+  discountAmount?: number;
+  /** 'FIRST10' or the coupon code; null/undefined when no discount. */
+  discountCode?: string | null;
   shippingCost?: number;
   tax?: number;
   orderTotal?: number;
@@ -220,6 +224,20 @@ export interface ShoppingCart {
   status?: string;
   createdAt?: string;
   updatedAt?: string;
+}
+
+/** A coupon this customer holds, with its live state against the current cart. */
+export interface MyCoupon {
+  id: number;
+  code: string;
+  title: string;
+  amount: number;
+  minCartValue: number;
+  expiresAt: string | null;
+  /** Device-clock time (ms) when the coupon expires; null = never. */
+  expiresAtMs?: number | null;
+  state: 'READY' | 'ADD_MORE' | 'NEXT_ORDER' | 'APPLIED';
+  shortfall: number;
 }
 
 export interface ShippingCalcResult {
@@ -317,6 +335,8 @@ export interface SaleOrderItem {
 
 export interface SaleOrder {
   entityId?: number;
+  discountAmount?: number;
+  discountCode?: string | null;
   orderId?: string | number;
   uuid?: string;
   // Backend's `incrementId` (e.g. "100000123") — preferred display id when present.
@@ -365,6 +385,8 @@ export interface SaleOrder {
 
 export interface InvoiceInfo {
   order?: SaleOrder;
+  /** Delivery centre that fulfilled the order (nearest to the shipping address). */
+  store?: { name?: string; address?: string; phone?: string };
   customer?: Customer;
   items?: SaleOrderItem[];
   shippingAddress?: CustomerAddress;
@@ -395,6 +417,8 @@ export interface GalleryImage {
   orientation?: string;
   position?: number;
   linkTo?: string;
+  /** Category id the slide's "Shop now" opens; null = categories tab. */
+  linkCategoryId?: number | null;
 }
 
 /** One selectable pack of the live Today's Deal (admin free text + price). */
@@ -439,6 +463,8 @@ export interface TodaysFarmer {
 /** Admin-approved product review for the home testimonials carousel. */
 export interface ApprovedReview {
   id: number;
+  /** Reviewed product — lets the home carousel open its page. */
+  productId?: number;
   customerName: string;
   productName: string;
   rating: number;

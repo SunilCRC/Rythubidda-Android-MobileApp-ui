@@ -35,6 +35,7 @@ import { useCartStore, useIsAuthenticated, useLocationStore } from '../../store'
 import { toArray } from '../../utils/format';
 import { hasProductImage } from '../../utils/image';
 import { iconForCategory, titleCaseCategory } from '../../utils/categoryIcon';
+import { buildCategoryTree } from '../../utils/categoryTree';
 import type { Category, GalleryImage, Product, TodaysDeal } from '../../types';
 
 // Show ~2 cards per screen width — slight peek of the third to hint "scroll me".
@@ -109,8 +110,8 @@ export const HomeScreen: React.FC = () => {
   // Home dynamic content — all three endpoints were built for the web
   // shop and hide themselves (null / []) when nothing is configured.
   const deal = useQuery({
-    queryKey: ['todaysDeal'],
-    queryFn: homeContentService.getCurrentDeal,
+    queryKey: ['todaysDeals'],
+    queryFn: homeContentService.getLiveDeals,
     staleTime: 30 * 1000,
     refetchInterval: 60 * 1000, // countdown-critical: follow admin edits
   });
@@ -166,8 +167,10 @@ export const HomeScreen: React.FC = () => {
     () => toArray<Product>(featured.data).filter(hasProductImage),
     [featured.data],
   );
+  // Same tree as the website: active parents only (children ride
+  // along as `children`) — the API list is flat.
   const categoriesList = useMemo(
-    () => toArray<Category>(categories.data),
+    () => buildCategoryTree(toArray<Category>(categories.data)),
     [categories.data],
   );
   const galleryList = useMemo(
@@ -251,7 +254,18 @@ export const HomeScreen: React.FC = () => {
             <HeroCarousel
               images={galleryList}
               height={190}
-              onShopPress={() => navigation.getParent()?.navigate('CategoriesTab')}
+              onShopPress={slide => {
+                // Slide linked to a category in admin Gallery: open it directly.
+                const id = Number(slide?.linkCategoryId ?? 0);
+                if (id > 0) {
+                  const match = toArray<Category>(categories.data).find(
+                    c => Number((c as any).id ?? (c as any).categoryId) === id,
+                  );
+                  navigation.navigate('Category', { categoryId: id, name: match?.name ?? '' });
+                  return;
+                }
+                navigation.getParent()?.navigate('CategoriesTab');
+              }}
             />
           </View>
         )}
@@ -264,9 +278,11 @@ export const HomeScreen: React.FC = () => {
         {/* DEAL OF THE DAY spotlight — tap opens the quick sheet with
             the deal's variants. Hides when no deal is live or this
             customer already used it (server decides). */}
-        {deal.data ? (
-          <DealSpotlight deal={deal.data} onPress={d => setSheet({ deal: d })} />
-        ) : null}
+        {deal.data && deal.data.length > 0
+          ? deal.data.map(d => (
+              <DealSpotlight key={d.id} deal={d} onPress={x => setSheet({ deal: x })} />
+            ))
+          : null}
 
         {/* Farmer + Reviews — SIDE BY SIDE in one row (user feedback):
             two half-width cards. Either one alone takes the full row. */}
@@ -286,6 +302,11 @@ export const HomeScreen: React.FC = () => {
                 <ReviewsCarousel
                   compact
                   reviews={reviews.data}
+                  onPress={r =>
+                    r.productId
+                      ? navigation.navigate('ProductDetail', { productId: r.productId })
+                      : undefined
+                  }
                   pageWidth={farmer.data ? DUO_CARD_W : SCREEN_W - 32}
                 />
               </View>

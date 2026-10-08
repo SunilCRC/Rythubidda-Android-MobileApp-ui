@@ -18,6 +18,7 @@ import { radius, shadows, spacing } from '../../theme/spacing';
 import { toArray } from '../../utils/format';
 import { isValidImageUrl, resolveImageUrl } from '../../utils/image';
 import { iconForCategory, titleCaseCategory } from '../../utils/categoryIcon';
+import { buildCategoryTree } from '../../utils/categoryTree';
 import type { Category } from '../../types';
 
 const { width: SCREEN_W } = Dimensions.get('window');
@@ -43,7 +44,12 @@ export const CategoriesListScreen: React.FC = () => {
     queryFn: catalogService.getCategories,
   });
 
-  const categories = useMemo(() => toArray<Category>(data), [data]);
+  // Parents only, like the website's "Shop by Categories" — children
+  // are reachable as chips inside the parent screen.
+  const categories = useMemo(
+    () => buildCategoryTree(toArray<Category>(data)),
+    [data],
+  );
 
   if (isLoading) return <LoadingScreen message="Loading categories..." />;
 
@@ -167,7 +173,7 @@ const CategoryTile: React.FC<TileProps> = ({ category, index, onPress }) => {
               weight="700"
               style={{ marginTop: 2 }}
             >
-              {subCount} {subCount === 1 ? 'item' : 'items'}
+              {subCount} {subCount === 1 ? 'sub-category' : 'sub-categories'}
             </Text>
           ) : null}
         </View>

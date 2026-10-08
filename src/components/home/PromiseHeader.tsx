@@ -2,10 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import LinearGradient from 'react-native-linear-gradient';
+import FastImage from 'react-native-fast-image';
 import { Text } from '../common';
 import { colors } from '../../theme/colors';
 import { radius, shadows, spacing } from '../../theme/spacing';
 import { iconForCategory, titleCaseCategory } from '../../utils/categoryIcon';
+import { isValidImageUrl, resolveImageUrl } from '../../utils/image';
 import type { Category } from '../../types';
 
 /**
@@ -113,10 +115,19 @@ export const PromiseHeader: React.FC<Props> = ({
               accessibilityRole="button"
               accessibilityLabel={`Browse ${c.name}`}
             >
-              {/* Icon bubbles (user preference over photos) — the
-                  category-accurate emoji on a warm squircle. */}
+              {/* Admin-uploaded category image when the row has one; the
+                  category-accurate emoji on a warm squircle otherwise
+                  (legacy rows carry a bare bucket URL → treated as none). */}
               <View style={styles.bubIm}>
-                <Text style={styles.bubEmoji}>{iconForCategory(c.name)}</Text>
+                {isValidImageUrl(c.image) ? (
+                  <FastImage
+                    source={{ uri: resolveImageUrl(c.image) }}
+                    style={styles.bubImg}
+                    resizeMode={FastImage.resizeMode.cover}
+                  />
+                ) : (
+                  <Text style={styles.bubEmoji}>{iconForCategory(c.name)}</Text>
+                )}
               </View>
               <Text variant="caption" weight="800" color={colors.textSecondary} numberOfLines={1} style={styles.bubLabel}>
                 {titleCaseCategory(c.name || '')}

@@ -42,6 +42,7 @@ import { formatDate, formatINR } from '../../utils/format';
 import { showToast } from '../../utils/toast';
 import { haptics } from '../../utils/haptics';
 import { APP_CONFIG } from '../../constants/config';
+import { useDealLimits } from '../../hooks/useDealLimits';
 import type { HomeStackParamList } from '../../navigation/types';
 import type { Product } from '../../types';
 
@@ -106,6 +107,7 @@ export const ProductDetailScreen: React.FC<Props> = ({ route, navigation }) => {
   const addItem = useCartStore(s => s.addItem);
   const updateQty = useCartStore(s => s.updateQty);
   const removeItem = useCartStore(s => s.removeItem);
+  const { maxQtyFor } = useDealLimits();
   const requireAuth = useRequireAuth();
   const insets = useSafeAreaInsets();
 
@@ -294,7 +296,7 @@ export const ProductDetailScreen: React.FC<Props> = ({ route, navigation }) => {
     try {
       await updateQty(
         itemId,
-        Math.min(APP_CONFIG.MAX_CART_ITEM_QTY, cartQty + 1),
+        Math.min(maxQtyFor(cartLine?.qtyOptionId), cartQty + 1),
       );
     } catch (err: any) {
       showToast.error('Could not update', err?.message);
@@ -660,6 +662,53 @@ export const ProductDetailScreen: React.FC<Props> = ({ route, navigation }) => {
             >
               Customer Reviews
             </Text>
+            {/* Amazon-style breakdown: share of reviews per star, so a long
+                list can be judged at a glance (tester request). */}
+            {(() => {
+              const rv = product.reviews ?? [];
+              const total = rv.length;
+              return (
+                <Card elevated={false} style={{ marginBottom: spacing.sm }}>
+                  {[5, 4, 3, 2, 1].map(star => {
+                    const n = rv.filter(r => Math.round(Number(r.rating ?? 0)) === star).length;
+                    const pct = total > 0 ? Math.round((n * 100) / total) : 0;
+                    return (
+                      <View
+                        key={`bar-${star}`}
+                        style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 2 }}
+                      >
+                        <Text variant="caption" weight="700" color={colors.textSecondary} style={{ width: 46 }}>
+                          {star} star
+                        </Text>
+                        <View
+                          style={{
+                            flex: 1,
+                            height: 8,
+                            borderRadius: 4,
+                            backgroundColor: '#E5E7EB',
+                            overflow: 'hidden',
+                            marginHorizontal: spacing.sm,
+                          }}
+                        >
+                          <View style={{ width: `${pct}%`, height: '100%', backgroundColor: '#F59E0B' }} />
+                        </View>
+                        <Text
+                          variant="caption"
+                          weight="700"
+                          color={colors.textSecondary}
+                          style={{ width: 40, textAlign: 'right' }}
+                        >
+                          {pct}%
+                        </Text>
+                      </View>
+                    );
+                  })}
+                  <Text variant="caption" color={colors.textTertiary} style={{ marginTop: spacing.xs }}>
+                    Based on {total} review{total === 1 ? '' : 's'}
+                  </Text>
+                </Card>
+              );
+            })()}
             {product.reviews.slice(0, 5).map((r, i) => (
               <Card
                 key={`r-${r.id ?? i}`}
@@ -768,7 +817,7 @@ export const ProductDetailScreen: React.FC<Props> = ({ route, navigation }) => {
                 onDecrement={handleDecrement}
                 loading={adding}
                 min={0}
-                max={APP_CONFIG.MAX_CART_ITEM_QTY}
+                max={maxQtyFor(cartLine?.qtyOptionId)}
                 size="lg"
                 tone="primary"
               />

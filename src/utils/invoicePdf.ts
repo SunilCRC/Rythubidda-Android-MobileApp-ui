@@ -12,6 +12,8 @@ import type { CustomerAddress, SaleOrder, SaleOrderItem } from '../types';
 interface BuildArgs {
   invoiceNumber: string | number;
   invoiceDate?: string;
+  /** "Cash on Delivery" / "Online payment (Cashfree)" — from the invoice API. */
+  paymentMethod?: string;
   order: SaleOrder | undefined;
   items: SaleOrderItem[];
 }
@@ -103,6 +105,7 @@ function addressBlock(label: string, addr?: CustomerAddress): string {
 export function buildInvoiceHtml({
   invoiceNumber,
   invoiceDate,
+  paymentMethod,
   order,
   items,
 }: BuildArgs): string {
@@ -203,6 +206,7 @@ export function buildInvoiceHtml({
     <div class="company">${escapeHtml(COMPANY.name)}</div>
     <div class="meta">
       <span><b>Ordered On:</b> ${escapeHtml(orderedOn)}</span>
+      ${paymentMethod ? `<span><b>Payment:</b> ${escapeHtml(paymentMethod)}</span>` : ''}
       <span><b>GSTIN:</b> ${escapeHtml(COMPANY.gstin)}</span>
       <span><b>FSSAI License No:</b> ${escapeHtml(COMPANY.fssai)}</span>
     </div>

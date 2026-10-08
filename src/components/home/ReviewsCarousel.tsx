@@ -13,6 +13,8 @@ import type { ApprovedReview } from '../../types';
  */
 interface Props {
   reviews: ApprovedReview[];
+  /** Tap on a review card (home: opens the reviewed product). */
+  onPress?: (review: ApprovedReview) => void;
   /** Half-width card for the farmer+reviews duo row — no ‹ ›
       arrows, tighter type, parent owns the margins. */
   compact?: boolean;
@@ -23,7 +25,7 @@ interface Props {
 
 const SCREEN_W = Dimensions.get('window').width;
 
-export const ReviewsCarousel: React.FC<Props> = ({ reviews, compact, pageWidth }) => {
+export const ReviewsCarousel: React.FC<Props> = ({ reviews, compact, pageWidth, onPress }) => {
   const listRef = useRef<FlatList>(null);
   const [index, setIndex] = useState(0);
   const width = pageWidth ?? SCREEN_W - spacing.base * 2;
@@ -108,7 +110,13 @@ export const ReviewsCarousel: React.FC<Props> = ({ reviews, compact, pageWidth }
           const stars = Math.max(1, Math.min(5, item.rating || 5));
           const quote = (item.review || '').trim() || (item.title || '').trim();
           return (
-            <View style={{ width, paddingHorizontal: compact ? spacing.md : spacing.base, paddingBottom: compact ? spacing.sm + 2 : spacing.base }}>
+            <Pressable
+              onPress={() => onPress?.(item)}
+              disabled={!onPress}
+              accessibilityRole="button"
+              accessibilityLabel={item.productName ? `Open ${item.productName}` : 'Open review'}
+              style={{ width, paddingHorizontal: compact ? spacing.md : spacing.base, paddingBottom: compact ? spacing.sm + 2 : spacing.base }}
+            >
               <Text style={compact ? { ...styles.quoteMark, fontSize: 18, lineHeight: 20, marginTop: 2 } : styles.quoteMark}>“</Text>
               <Text
                 variant="bodySmall"
@@ -132,7 +140,7 @@ export const ReviewsCarousel: React.FC<Props> = ({ reviews, compact, pageWidth }
                 — {item.customerName || 'Verified Customer'}
                 {item.productName ? ` · ${item.productName}` : ''}
               </Text>
-            </View>
+            </Pressable>
           );
         }}
       />

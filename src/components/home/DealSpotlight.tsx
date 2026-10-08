@@ -22,7 +22,7 @@ interface Props {
 
 export const DealSpotlight: React.FC<Props> = ({ deal, onPress }) => {
   const endMs = useMemo(
-    () => Date.now() + (deal.remainingSeconds || 0) * 1000,
+    () => ((deal as any).fetchedAtMs ?? Date.now()) + (deal.remainingSeconds || 0) * 1000,
     [deal],
   );
   const [now, setNow] = useState(() => Date.now());

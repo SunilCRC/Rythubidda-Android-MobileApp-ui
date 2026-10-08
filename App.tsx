@@ -9,6 +9,7 @@ import { RootNavigator } from './src/navigation/RootNavigator';
 import { ErrorBoundary } from './src/components/common';
 import { BrandToast } from './src/components/feedback/BrandToast';
 import { ConfirmHost } from './src/components/feedback/ConfirmHost';
+import { ForceUpdateGate } from './src/components/ForceUpdateGate';
 import { colors } from './src/theme/colors';
 
 const queryClient = new QueryClient({
@@ -59,7 +60,12 @@ const App: React.FC = () => {
                   is intentionally NOT set here so per-screen StatusBar
                   components (HomeScreen → tintSoft, etc.) win. */}
               <StatusBar barStyle="dark-content" translucent={false} />
-              <RootNavigator />
+              {/* Mandatory-update gate: swaps the whole app for an "Update
+                  required" screen when this build is older than the minimum
+                  published at APP_VERSION_URL (see ForceUpdateGate). */}
+              <ForceUpdateGate>
+                <RootNavigator />
+              </ForceUpdateGate>
               {/* Brand confirm dialog — replaces native Alert.alert */}
               <ConfirmHost />
               {/* Toasts mount LAST so they overlay everything else */}
